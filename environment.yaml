@@ -13,5 +13,5 @@ dependencies:
   - keras==2.6.0
   - transforms3d==0.3.1
   - setuptools=58.0.4=py37h06a4308_0
-  pip:
+  - pip:
     - gin-config==0.4.0

@@ -27,7 +27,7 @@ For more details to train/test particle filter or rl agent [refer](https://githu
    ```
 
 [//]: # (      $ conda create -y -n igibson python=3.7)
-      conda create -f environment.yaml
+      conda env create -f environment.yaml
       source activate igibson
       export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
     ```
