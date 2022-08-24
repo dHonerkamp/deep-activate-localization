@@ -36,7 +36,7 @@ class AverageStepPositionErrorMetric(tf_metric.TFStepMetric):
     @common.function(autograph=True)
     def call(self, trajectory_tuple):
         traj = trajectory.from_transition(trajectory_tuple[0], trajectory_tuple[1], trajectory_tuple[2])
-        coords = trajectory_tuple[3]['coords'] if 'coords' in trajectory_tuple[3] else [0.0]
+        coords = tf.squeeze(tf.squeeze(trajectory_tuple[3]['coords'], 2), 1) if 'coords' in trajectory_tuple[3] else [0.0]
 
         # Zero out batch indices where a new episode is starting.
         self._coords_error_accumulator.assign(
@@ -88,15 +88,12 @@ class AverageStepOrientationErrorMetric(tf_metric.TFStepMetric):
     @common.function(autograph=True)
     def call(self, trajectory_tuple):
         traj = trajectory.from_transition(trajectory_tuple[0], trajectory_tuple[1], trajectory_tuple[2])
-        coords = trajectory_tuple[3]['orient'] if 'orient' in trajectory_tuple[3] else [0.0]
+        coords = tf.squeeze(tf.squeeze(trajectory_tuple[3]['orient'], 2), 1) if 'orient' in trajectory_tuple[3] else [0.0]
 
         # Zero out batch indices where a new episode is starting.
         self._orient_error_accumulator.assign(
-            tf.where(traj.is_first(), tf.zeros_like(self._orient_error_accumulator),
-                self._orient_error_accumulator))
-        self.environment_steps.assign(
-            tf.where(traj.is_first(), tf.zeros_like(self.environment_steps),
-                self.environment_steps))
+            tf.where(traj.is_first(), tf.zeros_like(self._orient_error_accumulator), self._orient_error_accumulator))
+        self.environment_steps.assign(tf.where(traj.is_first(), tf.zeros_like(self.environment_steps), self.environment_steps))
 
         # Update accumulator with received pose mse.
         self._orient_error_accumulator.assign_add(coords)

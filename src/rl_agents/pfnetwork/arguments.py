@@ -177,6 +177,8 @@ def parse_common_args(env_name: str, collect_data: bool = False, add_rl_args: bo
     if params.resume_id:
         assert params.eval_only, "Continuing to train not supported atm (replay buffer doesn't get saved)"
 
+    if params.likelihood_model == 'scan_correlation':
+        assert params.obs_mode == 'occupancy_grid', params.obs_mode
 
     random.seed(params.seed)
     np.random.seed(params.seed)
