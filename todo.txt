@@ -278,7 +278,7 @@ $ nohup python -u train.py \
 --transition_std '0.' '0.' \
 --resample=false \
 --batch_size=6 \
---learningrate=1e-4 \
+--learning_rate=1e-4 \
 --epochs=100 \
 --gpu_num=1 \
 --seed=42 > rgb_depth.out &
@@ -309,7 +309,7 @@ $ nohup python -u test.py \
 --transition_std '0.' '0.' \
 --resample=false \
 --batch_size=6 \
---learningrate=1e-4 \
+--learning_rate=1e-4 \
 --epochs=100 \
 --gpu_num=1 \
 --seed=42 > rgb_depth.out &

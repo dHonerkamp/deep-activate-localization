@@ -20,7 +20,6 @@ from environments.envs.localize_env import LocalizeGibsonEnv
 from pfnetwork.train import train_step, eval_step, prepare_data, WANDB_PROJECT, stack_loss_dicts, calc_metrics, vis_output, init_pfnet_model
 from pfnetwork.arguments import parse_common_args, particle_std_to_covariance
 from environments.suite_gibson import create_env
-from rl_agents.UNUSED import pfnet_loss
 
 np.set_printoptions(suppress=True)
 
