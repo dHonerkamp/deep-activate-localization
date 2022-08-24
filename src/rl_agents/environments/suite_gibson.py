@@ -8,6 +8,38 @@ from tf_agents.environments import gym_wrapper
 from tf_agents.environments import wrappers
 
 
+def create_env(params, pfnet_model, do_wrap_env: bool = False):
+    env = LocalizeGibsonEnv(
+        config_file=params.config_file,
+        scene_id=params.scene_id,
+        mode=params.env_mode,
+        # use_tf_function=params.use_tf_function,
+        # init_pfnet=params.init_env_pfnet,
+        action_timestep=params.action_timestep,
+        physics_timestep=params.physics_timestep,
+        device_idx=params.device_idx,
+        pfnet_model=pfnet_model,
+        pf_params=params,
+    )
+    env.reset()
+
+    if do_wrap_env:
+        # discount = env.config['discount_factor']
+        assert params.gamma == env.config['discount_factor']
+        max_episode_steps = env.config['max_step']
+
+        env = wrap_env(env,
+                       discount=params.gamma,
+                       max_episode_steps=max_episode_steps,
+                       gym_env_wrappers=(),
+                       time_limit_wrapper=wrappers.TimeLimit,
+                       env_wrappers=(),
+                       spec_dtype_map=None,
+                       auto_reset=True)
+        
+    return env
+
+
 @gin.configurable
 def load(config_file,
          model_id=None,

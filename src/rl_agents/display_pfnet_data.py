@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Wedge
 import numpy as np
 import os
+
+from rl_agents.UNUSED import pfnet_loss
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import random
 from scipy.special import softmax
@@ -16,7 +18,7 @@ from tensorflow import keras
 from tqdm import tqdm
 
 from pfnetwork import pfnet
-from environments.env_utils import datautils, pfnet_loss, render
+from environments.env_utils import datautils, render
 from environments.envs.localize_env import LocalizeGibsonEnv
 
 np.set_printoptions(suppress=True)

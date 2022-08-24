@@ -169,8 +169,8 @@ def run_testing(params):
 
             # if stateful: reset RNN s.t. initial_state is set to initial particles and weights
             # if non-stateful: pass the state explicity every step
-            if params.stateful:
-                model.layers[-1].reset_states(state)    # RNN layer
+            # if params.stateful:
+            #     model.layers[-1].reset_states(state)    # RNN layer
 
             input = [observation, odometry]
             model_input = (input, state)

@@ -40,11 +40,12 @@ def draw_floor_map(floor_map, map_shape, plt_ax, map_plt, cmap='gray'):
     """
 
     H, W = map_shape[:2]
-    origin_x, origin_y = W/2, H/2
+    origin_x, origin_y = W / 2, H / 2
     if map_plt is None:
         # draw floor map
-        map_plt = plt_ax.imshow(floor_map[:H, :W], cmap=cmap, origin='lower')
-        plt.scatter(origin_x, origin_y, s=10, c='black', marker='x', alpha=1)
+        # map_plt = plt_ax.imshow(floor_map[:H, :W], cmap=cmap, origin='lower')
+        map_plt = plt_ax.imshow(floor_map[:H, :W], cmap=cmap)
+        # plt.scatter(origin_x, origin_y, s=10, c='black', marker='x', alpha=1)
 
         # rect = patches.Rectangle((45, 45), 10, 10, linewidth=1, edgecolor='white', facecolor='none')
         # plt_ax.add_patch(rect)
@@ -64,7 +65,7 @@ def draw_particles_pose(particles, weights, map_shape, particles_plt, scale=1):
     """
 
     part_col, part_row, part_th = tf.unstack(particles, axis=-1, num=3)   # (k, 3)
-    height, width, channel = map_shape
+    # height, width, channel = map_shape
 
     # HACK: display particles alpha proprtional to their weights
     lin_weights = softmax(weights)
@@ -72,7 +73,7 @@ def draw_particles_pose(particles, weights, map_shape, particles_plt, scale=1):
     alphas = np.where(lin_weights >= th, 1, 0) * lin_weights
     alphas = alphas/np.max(alphas)
 
-    rgba_colors = cm.rainbow(weights-np.min(weights))
+    rgba_colors = cm.rainbow(weights - np.min(weights))
     rgba_colors[:, 3] = alphas
 
     if particles_plt is None:
@@ -98,21 +99,23 @@ def draw_robot_pose(robot_pose, color, map_shape, plt_ax, position_plt, heading_
     :return tuple(matplotlib.patches.Wedge, matplotlib.lines.Line2D): updated position and heading plot of robot
     """
 
-    col, row, heading = robot_pose
-    height, width, channel = map_shape
+    # col, row, heading = np.squeeze(robot_pose)
+    # NOTE: matplotlib expects x, y coords, while when we index into the floormap we index [y, x]
+    y, x, heading = np.squeeze(robot_pose)
+    # height, width, channel = map_shape
 
-    heading_len  = robot_radius = 1.0
-    xdata = [row, row + (robot_radius + heading_len) * np.cos(heading)]
-    ydata = [col, col + (robot_radius + heading_len) * np.sin(heading)]
+    heading_len = robot_radius = 3 * 1.0
+    xdata = [x, x + (robot_radius + heading_len) * np.cos(heading)]
+    ydata = [y, y + (robot_radius + heading_len) * np.sin(heading)]
 
     if position_plt == None:
         # render robot position and heading with color
-        position_plt = Wedge((row, col), robot_radius, 0, 360, color=color, alpha=0.5)
+        position_plt = Wedge((x, y), robot_radius, 0, 360, color=color, alpha=0.5)
         plt_ax.add_artist(position_plt)
-        heading_plt, = plt_ax.plot(xdata, ydata, color=color, alpha=0.5)
+        heading_plt = plt_ax.plot(xdata, ydata, color=color, alpha=0.5)[0]
     else:
         # update existing robot position and heading
-        position_plt.update({'center': [row, col]})
+        position_plt.update({'center': [x, y]})
         heading_plt.update({'xdata': xdata, 'ydata': ydata})
     if plt_path is True:
         plt_ax.arrow(xdata[0], ydata[0], (xdata[1]-xdata[0]), (ydata[1]-ydata[0]), head_width=0.5, head_length=0.7, fc='brown', ec='brown')

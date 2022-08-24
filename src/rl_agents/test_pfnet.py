@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import numpy as np
 import os
+
+from rl_agents.UNUSED import pfnet_loss
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from pathlib import Path
 import random
@@ -14,7 +16,7 @@ import tensorflow as tf
 from tqdm import tqdm
 
 from pfnetwork import pfnet
-from environments.env_utils import datautils, pfnet_loss, render
+from environments.env_utils import datautils, render
 from environments.envs.localize_env import LocalizeGibsonEnv
 
 np.set_printoptions(suppress=True, precision=3)
@@ -63,7 +65,7 @@ def parse_args():
     arg_parser.add_argument(
         '--num_eval_episodes',
         type=int,
-        default=1,
+        default=50,
         help='The number of episodes to run eval on.'
     )
     arg_parser.add_argument(
@@ -157,6 +159,12 @@ def parse_args():
         default=1.0,
         help='Rescale factor for extracing local map'
     )
+    arg_parser.add_argument(
+        '--likelihood_model',
+        type=str,
+        # learned or scan_correlation
+        default='learned',
+    )
 
     # define igibson env parameters
     arg_parser.add_argument(
@@ -233,10 +241,14 @@ def parse_args():
 
     # HACK:
     params.loop = 6
-    params.use_tf_function = True
+    params.use_tf_function = False
     params.init_env_pfnet = False
     params.store_results = True
     params.num_clusters = 10
+
+    params.likelihood_model = 'learned'
+    # if params.likelihood_model == 'scan_correlation':
+    #     assert params.obs_mode == 'occupancy_grid', params.obs_mode
 
     params.env_mode = 'headless'
     # params.env_mode = 'gui'  # iggui, pbgui
@@ -322,8 +334,8 @@ def store_results(eps_idx, floor_map, org_map_shape, particle_states, particle_w
         img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         images.append(img)
 
-    gt_pose_mts = np.array([*env.scene.map_to_world(true_state[b_idx][:2]), true_state[b_idx][2]])
-    est_pose_mts = np.array([*env.scene.map_to_world(est_state[b_idx][:2]), est_state[b_idx][2]])
+    gt_pose_mts = np.array([*env.map_to_world(true_state[b_idx][:2]), true_state[b_idx][2]])
+    est_pose_mts = np.array([*env.map_to_world(est_state[b_idx][:2]), est_state[b_idx][2]])
     print(f'{eps_idx} End True Pose: {gt_pose_mts}, End Estimated Pose: {est_pose_mts} in mts')
     print(f'{eps_idx} End True Pose: {true_state[b_idx]}, End Estimated Pose: {est_state[b_idx]} in px')
 
@@ -372,7 +384,7 @@ def pfnet_test(arg_params):
     assert arg_params.trav_map_resolution == env.trav_map_resolution
 
     # create particle filter net model
-    pfnet_model = pfnet.pfnet_model(arg_params)
+    pfnet_model = pfnet.pfnet_model(arg_params, is_igibson=True)
     print("=====> Created pf model ")
 
     # load model from checkpoint file
@@ -489,7 +501,7 @@ def rt_pfnet_test(arg_params):
 
     # HACK:
     arg_params.use_plot = True
-    arg_params.store_plot = True
+    arg_params.store_plot = False
     arg_params.init_env_pfnet = True
 
     # create igibson env which is used "only" to sample particles
@@ -551,7 +563,7 @@ def rt_pfnet_test(arg_params):
             tf.summary.scalar('per_eps_msp', eps_msp.result(), step=eps)
             tf.summary.scalar('per_eps_mso', eps_mso.result(), step=eps)
             tf.summary.scalar('per_eps_mcp', eps_mcp.result(), step=eps)
-            tf.summary.scalar('per_eps_end_reward', reward, step=eps)
+            tf.summary.scalar('per_eps_end_reward', tf.squeeze(reward), step=eps)
 
             # Reset the metrics at the start of the next episode
             eps_msp.reset_states()
@@ -567,3 +579,6 @@ if __name__ == '__main__':
 
     # test particle filter in real-time
     rt_pfnet_test(parsed_params)
+
+
+# python -u test_pfnet.py --pfnet_loadpath=./pfnetwork/checkpoints/pfnet_igibson_data/checkpoint_63_0.136/pfnet_checkpoint --obs_mode=rgb-depth --custom_output rgb_obs depth_obs likelihood_map --scene_id=Rs --init_particles_distr=gaussian --init_particles_std 0.2 0.523599 --particles_range=100 --num_particles=500 --transition_std 0.04 0.0872665 --resample=true --alpha_resample_ratio=0.95 --global_map_size 100 100 1 --window_scaler=1.0 --config_file=./configs/locobot_pfnet_nav.yaml --device_idx=0 --seed=15
