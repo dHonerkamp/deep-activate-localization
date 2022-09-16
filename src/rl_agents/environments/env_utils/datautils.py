@@ -4,7 +4,183 @@ import cv2
 import numpy as np
 import pybullet as p
 import tensorflow as tf
-from pfnetwork.pfnet import PFCell
+import os
+from PIL import Image
+
+# from pfnetwork.pfnet import PFCell
+from functools import partial
+from igibson.utils.assets_utils import get_scene_path
+
+
+ORIG_IGIBSON_MAP_RESOLUTION = 0.01
+
+
+def get_floor_map(scene_id, floor_num, trav_map_resolution, trav_map_erosion, pad_map_size):
+    """
+    Get the scene floor map (traversability map + obstacle map)
+
+    :param str: scene id
+    :param int: task floor number
+    :return ndarray: floor map of current scene (H, W, 1)
+    """
+    # NOTE: these values might be hardcoded in a place, so if changing the task config, also change the hardcoded values!
+    assert trav_map_resolution == 0.1, trav_map_resolution
+    assert trav_map_erosion == 2, trav_map_erosion
+    
+    obstacle_map = np.array(Image.open(
+        os.path.join(get_scene_path(scene_id), f'floor_{floor_num}.png'))
+    )
+
+    trav_map = np.array(Image.open(
+        os.path.join(get_scene_path(scene_id), f'floor_trav_{floor_num}.png'))
+    )
+
+    # remove unnecessary empty map parts
+    # bb = pfnet.PFCell.bounding_box(obstacle_map == 0)
+    # obstacle_map = obstacle_map[bb[0]: bb[1], bb[2]: bb[3]]
+    # trav_map = trav_map[bb[0]: bb[1], bb[2]: bb[3]]
+
+    # 0: free / unexplored / outside map, 1: obstacle
+    # NOTE: shouldn't mather that outside the map is not unexplored, because this will always be unexplored in the lidar scan and so will always be masked out
+    occupancy_map = np.zeros_like(trav_map)
+    # occupancy_map[trav_map == 0] = 2
+    occupancy_map[obstacle_map == 0] = 1
+
+    height, width = trav_map.shape
+    resize = (int(width * ORIG_IGIBSON_MAP_RESOLUTION / trav_map_resolution),
+                int(height * ORIG_IGIBSON_MAP_RESOLUTION / trav_map_resolution))
+    occupancy_map_small = cv2.resize(occupancy_map.astype(float), resize, interpolation=cv2.INTER_AREA)
+    occupancy_map_small = occupancy_map_small[:, :, np.newaxis]
+    # plt.imshow(occupancy_map_small > 0.1);
+    # plt.show()
+
+    # o = obstacle_map.copy()
+    # flood_fill_flags = 4
+    # h, w = o.shape[:2]
+    # flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+    # cv2.floodFill(o, mask=None, seedPoint=(h//2, w//2), newVal=125)
+    # plt.imshow(o); plt.show()
+
+    trav_map[obstacle_map == 0] = 0
+
+    # HACK: use same rescaling as in iGibsonEnv
+    # height, width = trav_map.shape
+    # resize = int(height * self.map_pixel_in_meters / self.trav_map_resolution)
+    trav_map = cv2.resize(trav_map, resize)
+    trav_map_erosion = trav_map_erosion
+    trav_map = cv2.erode(trav_map, np.ones((trav_map_erosion, trav_map_erosion)))
+    # 1: traversible
+    trav_map[trav_map < 255] = 0
+    trav_map[trav_map == 255] = 1
+    trav_map = trav_map[:, :, np.newaxis]
+
+    # HACK: right zero-pad floor/obstacle map
+    if pad_map_size is not None:
+        trav_map = pad_images(trav_map, pad_map_size)
+        occupancy_map_small = pad_images(occupancy_map_small, pad_map_size)
+
+    return occupancy_map_small, occupancy_map_small.shape, trav_map
+
+
+def get_random_points_map(npoints, trav_map, true_mask = None):
+    """
+    Sample a random point on the given floor number. If not given, sample a random floor number.
+
+    :param floor: floor number
+    :return floor: floor number
+    :return point: randomly sampled point in [x, y, z]
+    """
+    trav_map = trav_map.copy()
+    if true_mask is not None:
+        trav_map *= true_mask
+
+    trav_space = np.where(trav_map == 1)
+    idx = np.random.randint(0, high=trav_space[0].shape[0], size=npoints)
+    orn = np.random.uniform(0, np.pi * 2, size=npoints)
+
+    xy_map = np.stack([trav_space[0][idx], trav_space[1][idx], orn], 1)
+
+    # xy_map = np.array([trav_space[0][idx], trav_space[1][idx]])
+    # x, y = self.scene.map_to_world(xy_map)
+    # return np.array([x, y])
+    return xy_map
+
+
+def get_random_particles(num_particles, particles_distr, robot_pose, trav_map, particles_cov, particles_range=100):
+    """
+    Sample random particles based on the scene
+
+    :param particles_distr: string type of distribution, possible value: [gaussian, uniform]
+    :param robot_pose: ndarray indicating the robot pose ([batch_size], 3) in pixel space
+        if None, random particle poses are sampled using unifrom distribution
+        otherwise, sampled using gaussian distribution around the robot_pose
+    :param particles_cov: for tracking Gaussian covariance matrix (3, 3)
+    :param num_particles: integer indicating the number of random particles per batch
+    :param scene_map: floor map to sample valid random particles
+    :param particles_range: limit particles range in pixels centered from robot_pose for uniform distribution
+
+    :return ndarray: random particle poses  (batch_size, num_particles, 3) in pixel space
+    """
+
+    assert list(robot_pose.shape[1:]) == [3], f'{robot_pose.shape}'
+    assert list(particles_cov.shape) == [3, 3], f'{particles_cov.shape}'
+    # assert list(scene_map.shape[2:]) == [1], f'{scene_map.shape}'
+    #
+    # assert np.all(np.unique(scene_map) == np.array([0, 1]))
+
+    particles = []
+    batches = robot_pose.shape[0]
+    if particles_distr == 'uniform':
+        # iterate per batch_size
+        for b_idx in range(batches):
+            # sample_i = 0
+            # b_particles = []
+
+            # sample offset from the Gaussian ground truth
+            center = np.random.multivariate_normal(mean=robot_pose[b_idx], cov=particles_cov)
+
+            # NOTE: cv2 expects [x, y] order like matplotlib
+            mask = np.zeros_like(trav_map)
+            cv2.rectangle(mask,
+                            (int(center[1] - particles_range), int(center[0] - particles_range)),
+                            (int(center[1] + particles_range), int(center[0] + particles_range)),
+                            1, -1)
+            b_particles = get_random_points_map(npoints=num_particles, trav_map=trav_map, true_mask=mask)
+
+            # get bounding box, centered around the offset, for more efficient sampling
+            # rmin, rmax, cmin, cmax = self.bounding_box(scene_map)
+            # rmin, rmax, cmin, cmax = PFCell.bounding_box(scene_map, center, particles_range)
+
+            # # check if sampled pose is in environment map's free space
+            # while sample_i < num_particles:
+            #     particle = np.random.uniform(low=(rmin, cmin, 0.0), high=(rmax, cmax, 2.0 * np.pi), size=(3,))
+            #     # reject if mask is zero
+            #     if not scene_map[int(np.rint(particle[0])), int(np.rint(particle[1]))]:
+            #         continue
+            #     b_particles.append([particle[1], particle[0], particle[2]])
+            #
+            #     # import matplotlib.pyplot as plt
+            #     # s = scene_map.copy()
+            #     # s[int(np.rint(robot_pose[..., 1])), int(np.rint(robot_pose[..., 0]))] = 2
+            #     # s[int(np.rint(particle[0])), int(np.rint(particle[1]))] = 3
+            #     # plt.imshow(s); plt.show()
+            #
+            #     sample_i = sample_i + 1
+            particles.append(b_particles)
+    elif particles_distr == 'gaussian':
+        # iterate per batch_size
+        for b_idx in range(batches):
+            # sample offset from the Gaussian ground truth
+            center = np.random.multivariate_normal(mean=robot_pose[b_idx], cov=particles_cov)
+
+            # sample particles from the Gaussian, centered around the offset
+            particles.append(np.random.multivariate_normal(mean=center, cov=particles_cov, size=num_particles))
+    else:
+        raise ValueError(particles_distr)
+
+    particles = np.stack(particles)  # [batch_size, num_particles, 3]
+    return particles
+
 
 def normalize(angle):
     """
@@ -316,6 +492,8 @@ def select_action(agent: str, obs, params, env, old_pose):
         action = obstacle_avoidance(obs['obstacle_obs'], env.config["linear_velocity"], env.config["angular_velocity"])
     elif agent == 'goalnav_agent':
         action = goal_nav_agent(env=env, current_pose_pixel=old_pose, max_lin_vel=env.config["linear_velocity"], max_ang_vel=env.config["angular_velocity"])
+    elif agent == "turn_agent":
+        action = np.array([0., env.config["angular_velocity"]])
     else:
         raise ValueError(agent)
     return action
@@ -360,11 +538,13 @@ def gather_episode_stats(env, params, sample_particles=False):
 
     scene_id = env.config.get('scene_id')
     floor_num = env.task.floor_num
-    floor_map, _, trav_map = env.get_floor_map()  # already processed
+    # floor_map, _, trav_map = env.get_floor_map()  # already processed
+    floor_map = env.floor_map
+    trav_map = env.trav_map
     # trav_map, _ = env.get_obstacle_map()  # already processed
     assert list(floor_map.shape) == list(trav_map.shape)
 
-    old_pose = env.get_robot_pose(env.robots[0].calc_state(), floor_map.shape)
+    old_pose = env.get_robot_pose(env.robots[0].calc_state())
     assert list(old_pose.shape) == [3]
     true_poses.append(old_pose)
 
@@ -426,7 +606,7 @@ def gather_episode_stats(env, params, sample_particles=False):
         # left, left_front, right_front, right = obs['obstacle_obs'] # obstacle (not)present
 
         # get new robot state after taking action
-        new_pose = env.get_robot_pose(env.robots[0].calc_state(), floor_map.shape)
+        new_pose = env.get_robot_pose(env.robots[0].calc_state())
         assert list(new_pose.shape) == [3]
         true_poses.append(new_pose)
 
@@ -543,7 +723,7 @@ def serialize_tf_record(episode_data):
     odometry = episode_data['odometry']
     scene_id = episode_data['scene_id']
     floor_num = episode_data['floor_num']
-    floor_map = episode_data['floor_map']
+    # floor_map = episode_data['floor_map']
     # obstacle_map = episode_data['obstacle_map']
     # init_particles = episode_data['init_particles']
     # init_particle_weights = episode_data['init_particle_weights']
@@ -561,8 +741,8 @@ def serialize_tf_record(episode_data):
         'occupancy_grid_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=occupancy_grid.shape)),
         'scene_id': tf.train.Feature(bytes_list=tf.train.BytesList(value=[scene_id.encode('utf-8')])),
         'floor_num': tf.train.Feature(int64_list=tf.train.Int64List(value=[floor_num])),
-        'floor_map': tf.train.Feature(float_list=tf.train.FloatList(value=floor_map.flatten())),
-        'floor_map_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=floor_map.shape)),
+        # 'floor_map': tf.train.Feature(float_list=tf.train.FloatList(value=floor_map.flatten())),
+        # 'floor_map_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=floor_map.shape)),
         # 'obstacle_map': tf.train.Feature(float_list=tf.train.FloatList(value=obstacle_map.flatten())),
         # 'obstacle_map_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=obstacle_map.shape)),
         # 'init_particles': tf.train.Feature(float_list=tf.train.FloatList(value=init_particles.flatten())),
@@ -627,8 +807,8 @@ def deserialize_tf_record_igibson(raw_record):
         'occupancy_grid_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
         'scene_id': tf.io.FixedLenSequenceFeature((), dtype=tf.string, allow_missing=True),
         'floor_num': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
-        'floor_map': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
-        'floor_map_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
+        # 'floor_map': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
+        # 'floor_map_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
         # 'obstacle_map': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
         # 'obstacle_map_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
         # 'init_particles': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
@@ -685,7 +865,7 @@ def pad_images(images, new_shape):
     return padded_images
 
 
-def transform_raw_record(env, parsed_record, params):
+def transform_raw_record(parsed_record, params):
     """
     process de-serialized tfrecords data
     :param env: igibson env instance
@@ -708,10 +888,7 @@ def transform_raw_record(env, parsed_record, params):
         assert np.min(rgb_observation) >= 0. and np.max(rgb_observation) <= 1.
         depth_observation = parsed_record['depth_observation'].reshape([batch_size] + list(parsed_record['depth_observation_shape'][0]))[:, :trajlen]
         assert np.min(depth_observation) >= 0. and np.max(depth_observation) <= 1.
-        trans_record['observation'] = np.concatenate([
-            rgb_observation,
-            depth_observation,
-        ], axis=-1)
+        trans_record['observation'] = np.concatenate([rgb_observation, depth_observation,], axis=-1)
     elif obs_mode == 'depth':
         depth_observation = parsed_record['depth_observation'].reshape([batch_size] + list(parsed_record['depth_observation_shape'][0]))[:, :trajlen]
         assert np.min(depth_observation) >= 0. and np.max(depth_observation) <= 1.
@@ -752,14 +929,19 @@ def transform_raw_record(env, parsed_record, params):
 
         # HACK: right zero-pad floor/obstacle map
         # obstacle_map, _ = env.get_obstacle_map(scene_id, floor_num, pad_map_size)
-        floor_map, org_map_shape, trav_map = env.get_floor_map(scene_id, floor_num, pad_map_size)
+        # floor_map, org_map_shape, trav_map = env.get_floor_map(scene_id, floor_num, pad_map_size)
+        floor_map, org_map_shape, trav_map = get_floor_map(scene_id=scene_id, 
+                                                           floor_num=floor_num,
+                                                           pad_map_size=pad_map_size,
+                                                           trav_map_erosion=2, 
+                                                           trav_map_resolution=0.1)
 
         # sample random particles using gt_pose at start of trajectory
         gt_first_pose = np.expand_dims(trans_record['true_states'][b_idx, 0, :], axis=0)
-        init_particles = PFCell.get_random_particles(num_particles=num_particles,
+        init_particles = get_random_particles(num_particles=num_particles,
                                                      particles_distr=params.init_particles_distr,
                                                      robot_pose=gt_first_pose,
-                                                     env=env,
+                                                     trav_map=trav_map,
                                                      particles_cov=particles_cov,
                                                      particles_range=params.particles_range)
 

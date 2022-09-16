@@ -3,6 +3,7 @@ channels:
   - anaconda
   - defaults
   - conda-forge
+  - pytorch
 dependencies:
   - python=3.7
   - cudatoolkit=11.2
@@ -13,5 +14,9 @@ dependencies:
   - keras==2.6.0
   - transforms3d==0.3.1
   - setuptools=58.0.4=py37h06a4308_0
+  - pytorch
+  - pip>=22.1.2
   - pip:
-    - gin-config==0.4.0
+    # - gin-config==0.4.0
+    - wandb
+    - stable-baselines3[extra]

@@ -30,13 +30,15 @@ task_obs_dim: 4
 reward_type: geodesic
 success_reward: 10.0
 potential_reward_weight: 1.0
-collision_reward_weight: -1.0
+# NOTE: not used anymore
+collision_reward_weight: -0.1  # -1.0
 
 # discount factor
 discount_factor: 0.99
 
 # termination condition
 dist_tol: 0.36  # body width
+# NOTE: being ignored, overwritten by trajlen * loop
 max_step: 150 # 25*6
 max_collisions_allowed: 150
 
@@ -50,8 +52,8 @@ output: [task_obs, rgb, depth, scan, occupancy_grid]
 # Intel Realsense Depth Camera D435
 # https://store.intelrealsense.com/buy-intel-realsense-depth-camera-d435.html
 fisheye: false
-image_width: 256
-image_height: 256
+image_width: 56
+image_height: 56
 vertical_fov: 90
 # depth
 depth_low : 0.1
@@ -73,3 +75,4 @@ depth_noise_rate: 0.0
 # visual objects
 visual_object_at_initial_target_pos: true
 target_visual_object_visible_to_agent: false
+ 

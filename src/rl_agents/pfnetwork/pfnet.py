@@ -17,8 +17,11 @@ except:
     from architecture import networks
     from architecture.spatial_transformer import transformer
 
+from environments.env_utils.datautils import get_random_particles, get_random_points_map
+
 
 def cosine_similarity(a, b, dim=-1):
+    raise NotImplementedError("Untested, might still have bugs")
     if isinstance(a, tf.Tensor):
         return tf.inner(a, b, dim) / (tf.linalg.norm(a, dim) * tf.linalg.norm(b, dim))
     else:
@@ -83,11 +86,11 @@ class PFCell(keras.layers.AbstractRNNCell):
     def reset(robot_pose_pixel, env, params):
         # get random particles and weights based on init distribution conditions
         particles = tf.cast(tf.convert_to_tensor(
-            PFCell.get_random_particles(
+            get_random_particles(
                 params.num_particles,
                 params.init_particles_distr,
                 tf.expand_dims(tf.convert_to_tensor(robot_pose_pixel, dtype=tf.float32), axis=0),
-                env,
+                env.trav_map,
                 params.init_particles_cov,
                 params.particles_range)), dtype=tf.float32)
         particle_weights = tf.constant(np.log(1.0 / float(params.num_particles)),
@@ -142,84 +145,9 @@ class PFCell(keras.layers.AbstractRNNCell):
         loss['pred'] = loss_combined  # [batch_size, trajlen]
         loss['coords'] = loss_coords  # [batch_size, trajlen]
         loss['orient'] = loss_orient  # [batch_size, trajlen]
+        # loss['angular'] = tf.sqrt(tf.square(est_pose[..., 2] - norm_angle(true_states[..., 2])))
 
         return loss
-
-    @staticmethod
-    def get_random_particles(num_particles, particles_distr, robot_pose, env, particles_cov, particles_range=100):
-        """
-        Sample random particles based on the scene
-
-        :param particles_distr: string type of distribution, possible value: [gaussian, uniform]
-        :param robot_pose: ndarray indicating the robot pose ([batch_size], 3) in pixel space
-            if None, random particle poses are sampled using unifrom distribution
-            otherwise, sampled using gaussian distribution around the robot_pose
-        :param particles_cov: for tracking Gaussian covariance matrix (3, 3)
-        :param num_particles: integer indicating the number of random particles per batch
-        :param scene_map: floor map to sample valid random particles
-        :param particles_range: limit particles range in pixels centered from robot_pose for uniform distribution
-
-        :return ndarray: random particle poses  (batch_size, num_particles, 3) in pixel space
-        """
-
-        assert list(robot_pose.shape[1:]) == [3], f'{robot_pose.shape}'
-        assert list(particles_cov.shape) == [3, 3], f'{particles_cov.shape}'
-        # assert list(scene_map.shape[2:]) == [1], f'{scene_map.shape}'
-        #
-        # assert np.all(np.unique(scene_map) == np.array([0, 1]))
-
-        particles = []
-        batches = robot_pose.shape[0]
-        if particles_distr == 'uniform':
-            # iterate per batch_size
-            for b_idx in range(batches):
-                # sample_i = 0
-                # b_particles = []
-
-                # sample offset from the Gaussian ground truth
-                center = np.random.multivariate_normal(mean=robot_pose[b_idx], cov=particles_cov)
-
-                # NOTE: cv2 expects [x, y] order like matplotlib
-                mask = np.zeros_like(env.trav_map)
-                cv2.rectangle(mask,
-                              (int(center[1] - particles_range), int(center[0] - particles_range)),
-                              (int(center[1] + particles_range), int(center[0] + particles_range)),
-                              1, -1)
-                b_particles = env.get_random_points_map(num_particles, true_mask=mask)
-
-                # get bounding box, centered around the offset, for more efficient sampling
-                # rmin, rmax, cmin, cmax = self.bounding_box(scene_map)
-                # rmin, rmax, cmin, cmax = PFCell.bounding_box(scene_map, center, particles_range)
-
-                # # check if sampled pose is in environment map's free space
-                # while sample_i < num_particles:
-                #     particle = np.random.uniform(low=(rmin, cmin, 0.0), high=(rmax, cmax, 2.0 * np.pi), size=(3,))
-                #     # reject if mask is zero
-                #     if not scene_map[int(np.rint(particle[0])), int(np.rint(particle[1]))]:
-                #         continue
-                #     b_particles.append([particle[1], particle[0], particle[2]])
-                #
-                #     # import matplotlib.pyplot as plt
-                #     # s = scene_map.copy()
-                #     # s[int(np.rint(robot_pose[..., 1])), int(np.rint(robot_pose[..., 0]))] = 2
-                #     # s[int(np.rint(particle[0])), int(np.rint(particle[1]))] = 3
-                #     # plt.imshow(s); plt.show()
-                #
-                #     sample_i = sample_i + 1
-                particles.append(b_particles)
-        elif particles_distr == 'gaussian':
-            # iterate per batch_size
-            for b_idx in range(batches):
-                # sample offset from the Gaussian ground truth
-                center = np.random.multivariate_normal(mean=robot_pose[b_idx], cov=particles_cov)
-
-                # sample particles from the Gaussian, centered around the offset
-                particles.append(np.random.multivariate_normal(mean=center, cov=particles_cov, size=num_particles))
-        else:
-            raise ValueError(particles_distr)
-
-        particles = np.stack(particles)  # [batch_size, num_particles, 3]
-        return particles
 
     @staticmethod
     def bounding_box(img, robot_pose=None, lmt=100):
@@ -295,9 +223,7 @@ class PFCell(keras.layers.AbstractRNNCell):
         # x, y = (np.clip(int(particles[..., 0]), likelihood_map_ext.shape[0] - 1),
         #         np.clip(int(particles[..., 1]), likelihood_map_ext.shape[1] - 1))
 
-        xy_clipped = np.clip(particles[..., :2],
-                                    (0, 0),
-                                    (likelihood_map_ext.shape[0] - 1, likelihood_map_ext.shape[1] - 1)).astype(int)
+        xy_clipped = np.clip(particles[..., :2], (0, 0), (likelihood_map_ext.shape[0] - 1, likelihood_map_ext.shape[1] - 1)).astype(int)
 
         for idx in range(num_particles):
             x, y = xy_clipped[idx]
@@ -520,6 +446,9 @@ class PFCell(keras.layers.AbstractRNNCell):
         :param observation: image observation (batch, 56, 56, ch)
         :return (batch, k): particle likelihoods in the log space (unnormalized)
         """
+        if self.params.obs_mode == "occupancy_grid":
+            # robot is looking to the right, but should be looking up
+            observation = tf.image.rot90(observation, 1)
 
         batch_size, num_particles = particle_states.shape.as_list()[:2]
 

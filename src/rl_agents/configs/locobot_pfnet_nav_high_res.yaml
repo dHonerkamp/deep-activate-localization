@@ -20,12 +20,9 @@ linear_velocity: 0.5
 angular_velocity: 1.5707963267948966
 
 # task
-task: point_nav_fixed
+task: point_nav_random
 target_dist_min: 1.0
 target_dist_max: 10.0
-initial_pos: [-1.0, 0.35, 0.0] # as [x, y, z]
-initial_orn: [0.0, 0.0, 0.0]
-target_pos: [0.5, 0.7, 0.0]
 goal_format: polar
 task_obs_dim: 4
 
@@ -33,13 +30,15 @@ task_obs_dim: 4
 reward_type: geodesic
 success_reward: 10.0
 potential_reward_weight: 1.0
-collision_reward_weight: -1.0
+# NOTE: not used anymore
+collision_reward_weight: -0.1  # -1.0
 
 # discount factor
 discount_factor: 0.99
 
 # termination condition
 dist_tol: 0.36  # body width
+# NOTE: being ignored, overwritten by trajlen * loop
 max_step: 150 # 25*6
 max_collisions_allowed: 150
 
@@ -53,12 +52,12 @@ output: [task_obs, rgb, depth, scan, occupancy_grid]
 # Intel Realsense Depth Camera D435
 # https://store.intelrealsense.com/buy-intel-realsense-depth-camera-d435.html
 fisheye: false
-image_width: 56
-image_height: 56
+image_width: 256
+image_height: 256
 vertical_fov: 90
 # depth
 depth_low : 0.1
-depth_high: 10.0
+depth_high: 5.0
 # scan
 # Hokuyo URG-04LX-UG01
 # https://www.hokuyo-aut.jp/search/single.php?serial=166
@@ -76,3 +75,4 @@ depth_noise_rate: 0.0
 # visual objects
 visual_object_at_initial_target_pos: true
 target_visual_object_visible_to_agent: false
+ 

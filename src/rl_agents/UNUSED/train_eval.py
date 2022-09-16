@@ -27,7 +27,7 @@ import random
 import functools
 
 # custom tf_agents
-import rl_utils
+import rl_agents.UNUSED.rl_utils as rl_utils
 from tf_agents.system import system_multiprocessing as multiprocessing
 from tf_agents.agents.ddpg import critic_network
 from tf_agents.agents.sac import sac_agent

@@ -12,18 +12,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 from absl import flags
 from igibson.envs.igibson_env import iGibsonEnv
-from igibson.utils.assets_utils import get_scene_path
 from igibson.utils.utils import l2_distance
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 # from igibson.external.pybullet_tools.utils import plan_base_motion_2d
 from igibson.utils.utils import l2_distance, quatToXYZW, rotate_vector_2d, rotate_vector_3d
+from igibson.reward_functions.collision_reward import CollisionReward
+# from igibson.reward_functions.point_goal_reward import PointGoalReward
+# from igibson.reward_functions.potential_reward import PotentialReward
+# from igibson.termination_conditions.max_collision import MaxCollision
+from igibson.termination_conditions.out_of_bound import OutOfBound
+# from igibson.termination_conditions.point_goal import PointGoal
+from igibson.termination_conditions.timeout import Timeout
 
 from ..env_utils import datautils, render
+from ..env_utils.datautils import ORIG_IGIBSON_MAP_RESOLUTION
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from pathlib import Path
-from PIL import Image
 from pfnetwork import pfnet
 import pybullet as p
 from sklearn.cluster import KMeans
@@ -31,7 +37,7 @@ import tensorflow as tf
 tf.get_logger().setLevel('ERROR')
 
 
-ORIG_IGIBSON_MAP_RESOLUTION = 0.01
+
 
 
 class LocalizeGibsonEnv(iGibsonEnv):
@@ -72,6 +78,16 @@ class LocalizeGibsonEnv(iGibsonEnv):
         :param automatic_reset: whether to automatic reset after an episode finishes
         :param pf_params: argparse.Namespace parsed command-line arguments to initialize pfnet
         """
+        self.pf_params = pf_params
+        
+        if hasattr(pf_params, "high_res") and pf_params.high_res == True:
+            config_file = config_file.replace('.yaml', '_high_res.yaml')
+        
+        if isinstance(scene_id, (list, np.ndarray)):
+            self.scene_ids = scene_id
+            scene_id = np.random.choice(scene_id)
+        else:
+            self.scene_ids = []
 
         super(LocalizeGibsonEnv, self).__init__(
             config_file=config_file,
@@ -83,14 +99,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
             render_to_tensor=render_to_tensor,
             automatic_reset=automatic_reset)
 
-        # HACK: use termination_conditions: MaxCollision, Timeout, OutOfBound reward_functions: CollisionReward
-        # manually remove geodesic potential reward conditions
-        del self.task.reward_functions[0]
-
-        # manually remove point navigation task termination and reward conditions
-        del self.task.termination_conditions[-1]
-        del self.task.reward_functions[-1]
-
         # For the igibson maps, originally each pixel represents 0.01m, and the center of the image correspond to (0,0)
         # self.map_pixel_in_meters = 0.01
         # in igibson we work with rescaled 0.01m to 0.1m maps to sample robot poses
@@ -99,40 +107,17 @@ class LocalizeGibsonEnv(iGibsonEnv):
         self.depth_th = 3.
         self.robot_size_px = 0.3 / self.trav_map_resolution  # 0.03m
         assert self.config['max_step'] // pf_params.loop == pf_params.trajlen, (self.config['max_step'], pf_params.trajlen)
-        # assert pf_params.trav_map_resolution == self.trav_map_resolution, (pf_params.trav_map_resolution, self.trav_map_resolution)
-        # argparser = argparse.ArgumentParser()
-        # self.pf_params = argparser.parse_args([])
-        # self.use_pfnet = init_pfnet
-        # self.use_tf_function = use_tf_function
-        # # initialize particle filter
-        # if self.use_pfnet:
-        #     print("=====> LocalizeGibsonEnv's pfnet initializing....")
-        #     self.init_pfnet(pf_params)
-        # else:
-        #     self.pf_params.use_plot = False
-        #     self.pf_params.store_plot = False
-        #     if pf_params is not None:
-        #         self.pf_params.num_clusters = pf_params.num_clusters
-        #         self.pf_params.global_map_size = pf_params.global_map_size
-        #         self.pf_params.custom_output = pf_params.custom_output
-        #         self.pf_params.root_dir = pf_params.root_dir
-        #     else:
-        #         self.pf_params.num_clusters = 10
-        #         self.pf_params.global_map_size = [100, 100, 1]
-        #         self.pf_params.custom_output = ['rgb_obs', 'depth_obs', 'occupancy_grid', 'obstacle_obs']
-        #         self.pf_params.root_dir = './'
-        #         self.pf_params.loop = 6
+
         self.pfnet_model = pfnet_model
         assert pf_params is not None
         self.use_pfnet = self.pfnet_model is not None
-        self.pf_params = pf_params
         if self.pf_params.use_plot:
             self.init_pfnet_plots()
 
         # for custom tf_agents we are using supports dict() type observations
         observation_space = OrderedDict()
 
-        task_obs_dim = 7 # robot_prorpio_state (18)
+        task_obs_dim = 7 + self.pf_params.observe_steps  # robot_prorpio_state (18)
         if 'task_obs' in self.pf_params.custom_output:
             # HACK: use [-1k, +1k] range for TanhNormalProjectionNetwork to work
             observation_space['task_obs'] = gym.spaces.Box(
@@ -159,16 +144,20 @@ class LocalizeGibsonEnv(iGibsonEnv):
             observation_space['raw_particles'] = gym.spaces.Box(
                 low=-1000.0, high=+1000.0,
                 shape=(self.pf_params.num_particles,5),
-                dtype=np.float32)
+                dtype=np.float32)   
         if 'floor_map' in self.pf_params.custom_output:
             observation_space['floor_map'] = gym.spaces.Box(
                 low=0.0, high=1.0,
                 shape=self.pf_params.global_map_size,
                 dtype=np.float32)
         if 'likelihood_map' in self.pf_params.custom_output:
+            if np.max(self.pf_params.global_map_size) > 100:
+                shape = [50, 50]
+            else: 
+                shape = self.pf_params.global_map_size[:2]
             observation_space['likelihood_map'] = gym.spaces.Box(
                 low=-10.0, high=+10.0,
-                shape=(*self.pf_params.global_map_size[:2], 4),
+                shape=(*shape, 4),
                 dtype=np.float32)
         if "occupancy_grid" in self.pf_params.custom_output:
             self.grid_resolution = self.config.get("grid_resolution", 128)
@@ -187,8 +176,37 @@ class LocalizeGibsonEnv(iGibsonEnv):
         print("=====> LocalizeGibsonEnv initialized")
 
         self.last_reward = 0.0
+        
+        
+        # if self.pf_params.use_plot:
+        #     from igibson.sensors.vision_sensor import VisionSensor
+        #     cfg_orig = copy.deepcopy(self.config)
+        #     self.config["image_width"] = 256
+        #     self.config["image_height"] = 256
+        #     self.config["depth_high"] = 5.0
+        #     self.high_res_vision = VisionSensor(self, ['depth', 'rgb'])
+        #     self.config = cfg_orig
+            
+        #     o = self.high_res_vision.get_obs(self)
 
+    def load(self):
+        self.config["max_step"] = self.pf_params.trajlen * self.pf_params.loop
+        return super(LocalizeGibsonEnv, self).load()
 
+    def load_task_setup(self):
+        super(LocalizeGibsonEnv, self).load_task_setup()
+        # override task rewards as we don't want to use all of them
+        self.task.termination_conditions = [
+            # MaxCollision(self.config),
+            Timeout(self.config),
+            OutOfBound(self.config),
+            # PointGoal(self.config),
+        ]
+        self.task.reward_functions = [
+            # PotentialReward(self.config),
+            CollisionReward(self.config),
+            # PointGoalReward(self.config),
+        ]
 
     @staticmethod
     def _get_empty_env_plots():
@@ -305,90 +323,111 @@ class LocalizeGibsonEnv(iGibsonEnv):
         """
 
         # HACK: we use low update frequency
+        collisions = 0
         for _ in range(self.pf_params.loop):
-            state, reward, done, info = super(LocalizeGibsonEnv, self).step(action)
-        info['collision_penality'] = reward  # contains only collision reward per step
+            state, reward_unused, done, info = super(LocalizeGibsonEnv, self).step(action)
+            collisions += len(self.collision_links) > 0
+        # NOTE: completely overriding the env reward here !
+        has_collision = (collisions > 0)
+        reward = - self.pf_params.collision_reward_weight * has_collision
+        info['collision_penalty'] = reward  # contains only collision reward per step
 
         # perform particle filter update
         if self.use_pfnet:
             # HACK: wrap stop_gradient to make sure pfnet weights are not updated during rl training
             loss_dict = self.step_pfnet(state)
-            info['pred'] = loss_dict['pred']
-            info['coords'] = loss_dict['coords']
-            info['orient'] = loss_dict['orient']
+            info['pred'] = loss_dict['pred'].cpu().numpy()
+            info['coords'] = loss_dict['coords'].cpu().numpy()
+            info['orient'] = loss_dict['orient'].cpu().numpy()
+            # info['angular'] = loss_dict['angular'].cpu().numpy()
 
             # include pfnet's estimate in environment's reward
             # TODO: may need better reward ?
-            rescale = 10
-            reward = (reward - tf.stop_gradient(loss_dict['pred'])) / rescale
-            reward = tf.squeeze(reward)
+            if self.pf_params.reward == 'pred':
+                rescale = 1
+                reward -= tf.squeeze(loss_dict['pred']).cpu().numpy() / rescale
+                # reward = tf.squeeze(reward)
+                # reward = reward.cpu().numpy()
+            elif self.pf_params.reward == 'belief':
+                particles = self.curr_pfnet_state[0]
+                
+                dist_thresh = 0.4
+                angle_thresh = 0.2
+                correct_dist = np.linalg.norm(particles[..., :2] - self.curr_gt_pose[..., :2], axis=-1) < dist_thresh
+                correct_angle = np.abs(particles[..., 2] - self.curr_gt_pose[..., 2]) < angle_thresh
+                correct_share = np.sum(np.logical_and(correct_dist, correct_angle)) / self.pf_params.num_particles
+                
+                reward = 10 * correct_share
+            else:
+                raise ValueError(self.pf_params.reward)
 
         # just for the render function
         self.last_reward = reward
+        info['reward'] = reward
 
         # return custom environment observation
         custom_state = self.process_state(state)
-        return custom_state, reward.cpu().numpy(), done, info
+        return custom_state, reward, done, info
 
-    def sample_initial_pose_and_target_pos(self):
-        """
-        Sample robot initial pose and target position
-        :param env: environment instance
-        :return: initial pose and target position
-        """
-        self.task.target_dist_min = self.task.config.get("target_dist_min", 1.0)
-        self.task.target_dist_max = self.task.config.get("target_dist_max", 10.0)
+    # def sample_initial_pose_and_target_pos(self):
+    #     """
+    #     Sample robot initial pose and target position
+    #     :param env: environment instance
+    #     :return: initial pose and target position
+    #     """
+    #     self.task.target_dist_min = self.task.config.get("target_dist_min", 1.0)
+    #     self.task.target_dist_max = self.task.config.get("target_dist_max", 10.0)
 
-        lmt = 1.0
-        while True:
-            _, initial_pos = self.scene.get_random_point(floor=self.task.floor_num)
-            if -lmt <= initial_pos[0] <= lmt and -lmt <= initial_pos[1] <= lmt:
-                break
+    #     lmt = 1.0
+    #     while True:
+    #         _, initial_pos = self.scene.get_random_point(floor=self.task.floor_num)
+    #         if -lmt <= initial_pos[0] <= lmt and -lmt <= initial_pos[1] <= lmt:
+    #             break
 
-        max_trials = 200
-        dist = 0.0
-        for _ in range(max_trials):
-            _, target_pos = self.scene.get_random_point(floor=self.task.floor_num)
-            if self.scene.build_graph:
-                _, dist = self.scene.get_shortest_path(
-                    self.task.floor_num, initial_pos[:2], target_pos[:2], entire_path=False
-                )
-            else:
-                dist = l2_distance(initial_pos, target_pos)
-            if self.task.target_dist_min < dist < self.task.target_dist_max:
-                break
-        if not (self.task.target_dist_min < dist < self.task.target_dist_max):
-            print("WARNING: Failed to sample initial and target positions")
-        initial_orn = np.array([0, 0, np.random.uniform(0, np.pi * 2)])
-        return initial_pos, initial_orn, target_pos
+    #     max_trials = 200
+    #     dist = 0.0
+    #     for _ in range(max_trials):
+    #         _, target_pos = self.scene.get_random_point(floor=self.task.floor_num)
+    #         if self.scene.build_graph:
+    #             _, dist = self.scene.get_shortest_path(
+    #                 self.task.floor_num, initial_pos[:2], target_pos[:2], entire_path=False
+    #             )
+    #         else:
+    #             dist = l2_distance(initial_pos, target_pos)
+    #         if self.task.target_dist_min < dist < self.task.target_dist_max:
+    #             break
+    #     if not (self.task.target_dist_min < dist < self.task.target_dist_max):
+    #         print("WARNING: Failed to sample initial and target positions")
+    #     initial_orn = np.array([0, 0, np.random.uniform(0, np.pi * 2)])
+    #     return initial_pos, initial_orn, target_pos
 
-    def reset_agent(self):
-        """
-        Reset robot initial pose.
-        Sample initial pose and target position, check validity, and land it.
-        :param env: environment instance
-        """
-        reset_success = False
-        max_trials = 200
+    # def reset_agent(self):
+    #     """
+    #     Reset robot initial pose.
+    #     Sample initial pose and target position, check validity, and land it.
+    #     :param env: environment instance
+    #     """
+    #     reset_success = False
+    #     max_trials = 200
 
-        # cache pybullet state
-        # TODO: p.saveState takes a few seconds, need to speed up
-        state_id = p.saveState()
-        for i in range(max_trials):
-            initial_pos, initial_orn, target_pos = self.sample_initial_pose_and_target_pos()
-            reset_success = self.test_valid_position(self.robots[0], initial_pos, initial_orn) and self.test_valid_position(self.robots[0], target_pos)
-            p.restoreState(state_id)
-            if reset_success:
-                break
+    #     # cache pybullet state
+    #     # TODO: p.saveState takes a few seconds, need to speed up
+    #     state_id = p.saveState()
+    #     for i in range(max_trials):
+    #         initial_pos, initial_orn, target_pos = self.sample_initial_pose_and_target_pos()
+    #         reset_success = self.test_valid_position(self.robots[0], initial_pos, initial_orn) and self.test_valid_position(self.robots[0], target_pos)
+    #         p.restoreState(state_id)
+    #         if reset_success:
+    #             break
 
-        if not reset_success:
-            print("WARNING: Failed to reset robot without collision")
+    #     if not reset_success:
+    #         print("WARNING: Failed to reset robot without collision")
 
-        p.removeState(state_id)
+    #     p.removeState(state_id)
 
-        self.task.target_pos = target_pos
-        self.task.initial_pos = initial_pos
-        self.task.initial_orn = initial_orn
+    #     self.task.target_pos = target_pos
+    #     self.task.initial_pos = initial_pos
+    #     self.task.initial_orn = initial_orn
 
     def reset(self):
         """
@@ -396,7 +435,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
 
         :return: state: new observation
         """
-
         if self.pf_params.use_plot:
             self.last_video_path = self.store_results()
             # self.store_obs()
@@ -404,15 +442,23 @@ class LocalizeGibsonEnv(iGibsonEnv):
             # clear subplots
             self.fig.clear()
 
-            num_subplots = 5
+            num_subplots = 6
             # for sensor in ['rgb_obs', 'depth_obs', 'occupancy_grid']:
             #     if self.observation_space.get(sensor, None):
             #         num_subplots += 1
 
             self.plt_ax = [self.fig.add_subplot(1, num_subplots, i + 1) for i in range(num_subplots)]
-            self.plt_ax[0].set_title('iGibson Apartment')
+            [ax.set_axis_off() for ax in self.plt_ax]
+            # self.plt_ax[0].set_title('iGibson Apartment')
             self.env_plts = self._get_empty_env_plots()
 
+        if self.scene_ids:
+            scene_id = np.random.choice(self.scene_ids)
+            if scene_id != self.config["scene_id"]:
+                curr_ep, curr_step = self.current_episode, self.current_step
+                self.reload_model(scene_id)
+                self.current_episode, self.current_step = curr_ep, curr_step
+            
         # HACK: sample robot pose from selective area
         # self.reset_agent()
 
@@ -426,7 +472,7 @@ class LocalizeGibsonEnv(iGibsonEnv):
             # get latest robot state
             new_robot_state = self.robots[0].calc_state()
             # process new robot state: convert coords to pixel space
-            self.curr_gt_pose = self.get_robot_pose(new_robot_state, self.floor_map.shape)
+            self.curr_gt_pose = self.get_robot_pose(new_robot_state)
             init_particles, init_particle_weights = pfnet.PFCell.reset(robot_pose_pixel=self.curr_gt_pose, env=self, params=self.pf_params)
             self.curr_est_pose = pfnet.PFCell.get_est_pose(particles=init_particles, particle_weights=init_particle_weights)
 
@@ -466,8 +512,12 @@ class LocalizeGibsonEnv(iGibsonEnv):
             # rotate linear and angular velocities to local frame
             lin_vel = rotate_vector_3d(self.robots[0].get_linear_velocity(), *rpy)
             ang_vel = rotate_vector_3d(self.robots[0].get_angular_velocity(), *rpy)
+            steps_remaining = max(self.pf_params.trajlen - self.current_step, 0)
             # processed_state['task_obs'] = self.robots[0].calc_state()  # robot proprioceptive state
-            processed_state['task_obs'] = np.concatenate([lin_vel, ang_vel, [self.collision_step]])
+            if self.pf_params.observe_steps:
+                processed_state['task_obs'] = np.concatenate([lin_vel, ang_vel, [len(self.collision_links) > 0], [steps_remaining]])
+            else:
+                processed_state['task_obs'] = np.concatenate([lin_vel, ang_vel, [len(self.collision_links) > 0]])
         if 'rgb_obs' in self.pf_params.custom_output:
             processed_state['rgb_obs'] = state['rgb']  # [0, 1] range rgb image
         if 'depth_obs' in self.pf_params.custom_output:
@@ -509,9 +559,19 @@ class LocalizeGibsonEnv(iGibsonEnv):
             else:
                 processed_state['floor_map'] = self.floor_map # [0, 2] range floor map
         if 'likelihood_map' in self.pf_params.custom_output:
-            processed_state['likelihood_map'] = pfnet.PFCell.get_likelihood_map(particles=self.curr_pfnet_state[0],
+            lmap = pfnet.PFCell.get_likelihood_map(particles=self.curr_pfnet_state[0],
                                                                                     particle_weights=self.curr_pfnet_state[1],
                                                                                     floor_map=self.floor_map)
+            if np.max(self.pf_params.global_map_size) > 100:
+                # take a cut-out around the current best estimate
+                lmap = pfnet.PFCell.transform_maps(global_map=tf.convert_to_tensor(lmap[None], tf.float32),
+                                        particle_states=tf.convert_to_tensor(self.curr_est_pose, tf.float32)[None, None],
+                                        local_map_size=(50, 50),
+                                        window_scaler=self.pf_params.window_scaler,
+                                        agent_at_bottom=False,
+                                        flip_map=True)
+                lmap = np.squeeze(tf.stop_gradient(lmap))
+            processed_state['likelihood_map'] = lmap
         if 'obstacle_obs' in self.pf_params.custom_output:
             # check for close obstacles to robot
             min_depth = np.min(state['depth'] * 100, axis=0)
@@ -567,7 +627,7 @@ class LocalizeGibsonEnv(iGibsonEnv):
         # new_occupancy_grid = np.atleast_3d(new_occupancy_grid)
 
         # process new robot state: convert coords to pixel space
-        new_gt_pose = self.get_robot_pose(new_robot_state, self.floor_map.shape)
+        new_gt_pose = self.get_robot_pose(new_robot_state)
 
         # calculate actual odometry b/w old pose and new pose
         old_gt_pose = self.curr_gt_pose
@@ -699,9 +759,7 @@ class LocalizeGibsonEnv(iGibsonEnv):
         cluster_centers = kmeans.cluster_centers_
 
         assert list(lin_weights.shape) == list(cluster_indices.shape)
-        cluster_weights = np.array([
-                            np.sum(lin_weights[cluster_indices==c_idx]) for c_idx in range(num_clusters)
-                        ])
+        cluster_weights = np.array([np.sum(lin_weights[cluster_indices==c_idx]) for c_idx in range(num_clusters)])
 
         return cluster_centers, cluster_weights
 
@@ -758,62 +816,71 @@ class LocalizeGibsonEnv(iGibsonEnv):
         """
         if scene_id is not None and floor_num is not None:
             self.set_scene(scene_id, floor_num)
-
-        obstacle_map = np.array(Image.open(
-            os.path.join(get_scene_path(self.config.get('scene_id')), f'floor_{self.task.floor_num}.png'))
-        )
-
-        trav_map = np.array(Image.open(
-            os.path.join(get_scene_path(self.config.get('scene_id')), f'floor_trav_{self.task.floor_num}.png'))
-        )
-
-        # remove unnecessary empty map parts
-        # bb = pfnet.PFCell.bounding_box(obstacle_map == 0)
-        # obstacle_map = obstacle_map[bb[0]: bb[1], bb[2]: bb[3]]
-        # trav_map = trav_map[bb[0]: bb[1], bb[2]: bb[3]]
-
-        # 0: free / unexplored / outside map, 1: obstacle
-        # NOTE: shouldn't mather that outside the map is not unexplored, because this will always be unexplored in the lidar scan and so will always be masked out
-        occupancy_map = np.zeros_like(trav_map)
-        # occupancy_map[trav_map == 0] = 2
-        occupancy_map[obstacle_map == 0] = 1
-
-        height, width = trav_map.shape
-        resize = (int(width * ORIG_IGIBSON_MAP_RESOLUTION / self.trav_map_resolution),
-                  int(height * ORIG_IGIBSON_MAP_RESOLUTION / self.trav_map_resolution))
-        occupancy_map_small = cv2.resize(occupancy_map.astype(float), resize, interpolation=cv2.INTER_AREA)
-        occupancy_map_small = occupancy_map_small[:, :, np.newaxis]
-        # plt.imshow(occupancy_map_small > 0.1);
-        # plt.show()
-
-        # o = obstacle_map.copy()
-        # flood_fill_flags = 4
-        # h, w = o.shape[:2]
-        # flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
-        # cv2.floodFill(o, mask=None, seedPoint=(h//2, w//2), newVal=125)
-        # plt.imshow(o); plt.show()
-
-        trav_map[obstacle_map == 0] = 0
-
-        # HACK: use same rescaling as in iGibsonEnv
-        # height, width = trav_map.shape
-        # resize = int(height * self.map_pixel_in_meters / self.trav_map_resolution)
-        trav_map = cv2.resize(trav_map, resize)
-        trav_map_erosion = self.config.get('trav_map_erosion', 2)
-        trav_map = cv2.erode(trav_map, np.ones((trav_map_erosion, trav_map_erosion)))
-        # 1: traversible
-        trav_map[trav_map < 255] = 0
-        trav_map[trav_map == 255] = 1
-        trav_map = trav_map[:, :, np.newaxis]
+            
+        occupancy_map_small, occupancy_map_small_shape, trav_map = datautils.get_floor_map(scene_id=self.config.get('scene_id'), 
+                                                                                 floor_num=self.task.floor_num, 
+                                                                                 trav_map_resolution=self.trav_map_resolution,
+                                                                                 trav_map_erosion=self.config.get('trav_map_erosion', 2),
+                                                                                 pad_map_size=pad_map_size)
 
         self.trav_map_size = np.array(trav_map.shape[:2])
+        return occupancy_map_small, occupancy_map_small_shape, trav_map
 
-        # HACK: right zero-pad floor/obstacle map
-        if pad_map_size is not None:
-            trav_map = datautils.pad_images(trav_map, pad_map_size)
-            occupancy_map_small = datautils.pad_images(occupancy_map_small, pad_map_size)
+        # obstacle_map = np.array(Image.open(
+        #     os.path.join(get_scene_path(self.config.get('scene_id')), f'floor_{self.task.floor_num}.png'))
+        # )
 
-        return occupancy_map_small, occupancy_map_small.shape, trav_map
+        # trav_map = np.array(Image.open(
+        #     os.path.join(get_scene_path(self.config.get('scene_id')), f'floor_trav_{self.task.floor_num}.png'))
+        # )
+
+        # # remove unnecessary empty map parts
+        # # bb = pfnet.PFCell.bounding_box(obstacle_map == 0)
+        # # obstacle_map = obstacle_map[bb[0]: bb[1], bb[2]: bb[3]]
+        # # trav_map = trav_map[bb[0]: bb[1], bb[2]: bb[3]]
+
+        # # 0: free / unexplored / outside map, 1: obstacle
+        # # NOTE: shouldn't mather that outside the map is not unexplored, because this will always be unexplored in the lidar scan and so will always be masked out
+        # occupancy_map = np.zeros_like(trav_map)
+        # # occupancy_map[trav_map == 0] = 2
+        # occupancy_map[obstacle_map == 0] = 1
+
+        # height, width = trav_map.shape
+        # resize = (int(width * ORIG_IGIBSON_MAP_RESOLUTION / self.trav_map_resolution),
+        #           int(height * ORIG_IGIBSON_MAP_RESOLUTION / self.trav_map_resolution))
+        # occupancy_map_small = cv2.resize(occupancy_map.astype(float), resize, interpolation=cv2.INTER_AREA)
+        # occupancy_map_small = occupancy_map_small[:, :, np.newaxis]
+        # # plt.imshow(occupancy_map_small > 0.1);
+        # # plt.show()
+
+        # # o = obstacle_map.copy()
+        # # flood_fill_flags = 4
+        # # h, w = o.shape[:2]
+        # # flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
+        # # cv2.floodFill(o, mask=None, seedPoint=(h//2, w//2), newVal=125)
+        # # plt.imshow(o); plt.show()
+
+        # trav_map[obstacle_map == 0] = 0
+
+        # # HACK: use same rescaling as in iGibsonEnv
+        # # height, width = trav_map.shape
+        # # resize = int(height * self.map_pixel_in_meters / self.trav_map_resolution)
+        # trav_map = cv2.resize(trav_map, resize)
+        # trav_map_erosion = self.config.get('trav_map_erosion', 2)
+        # trav_map = cv2.erode(trav_map, np.ones((trav_map_erosion, trav_map_erosion)))
+        # # 1: traversible
+        # trav_map[trav_map < 255] = 0
+        # trav_map[trav_map == 255] = 1
+        # trav_map = trav_map[:, :, np.newaxis]
+
+        # self.trav_map_size = np.array(trav_map.shape[:2])
+
+        # # HACK: right zero-pad floor/obstacle map
+        # if pad_map_size is not None:
+        #     trav_map = datautils.pad_images(trav_map, pad_map_size)
+        #     occupancy_map_small = datautils.pad_images(occupancy_map_small, pad_map_size)
+
+        # return occupancy_map_small, occupancy_map_small.shape, trav_map
 
     def map_to_world(self, xy):
         """
@@ -822,8 +889,9 @@ class LocalizeGibsonEnv(iGibsonEnv):
         :param xy: 2D location in map reference frame (image)
         :return: 2D location in world reference frame (metric)
         """
-        axis = 0 if len(xy.shape) == 1 else 1
-        return np.flip((xy - self.trav_map_size / 2.0) * self.trav_map_resolution, axis=axis)
+        # axis = 0 if len(xy.shape) == 1 else 1
+        # return np.flip((xy - self.trav_map_size / 2.0) * self.trav_map_resolution, axis=axis)
+        return self.scene.map_to_world(xy)
 
     def world_to_map(self, xy):
         """
@@ -832,7 +900,8 @@ class LocalizeGibsonEnv(iGibsonEnv):
         :param xy: 2D location in world reference frame (metric)
         :return: 2D location in map reference frame (image)
         """
-        return np.flip((np.array(xy) / self.trav_map_resolution + self.trav_map_size / 2.0)).astype(int)
+        # return np.flip((np.array(xy) / self.trav_map_resolution + self.trav_map_size / 2.0)).astype(int)
+        return self.scene.world_to_map(xy)
 
     def get_random_points_map(self, npoints, true_mask = None):
         """
@@ -842,22 +911,9 @@ class LocalizeGibsonEnv(iGibsonEnv):
         :return floor: floor number
         :return point: randomly sampled point in [x, y, z]
         """
-        trav_map = self.trav_map.copy()
-        if true_mask is not None:
-            trav_map *= true_mask
+        return datautils.get_random_points_map(npoints=npoints, trav_map=self.trav_map, true_mask=true_mask)
 
-        trav_space = np.where(trav_map == 1)
-        idx = np.random.randint(0, high=trav_space[0].shape[0], size=npoints)
-        orn = np.random.uniform(0, np.pi * 2, size=npoints)
-
-        xy_map = np.stack([trav_space[0][idx], trav_space[1][idx], orn], 1)
-
-        # xy_map = np.array([trav_space[0][idx], trav_space[1][idx]])
-        # x, y = self.scene.map_to_world(xy_map)
-        # return np.array([x, y])
-        return xy_map
-
-    def get_robot_pose(self, robot_state, floor_map_shape):
+    def get_robot_pose(self, robot_state):
         """
         Transform robot's pose from coordinate space to pixel space.
         """
@@ -879,7 +935,7 @@ class LocalizeGibsonEnv(iGibsonEnv):
         render.draw_robot_pose(pose, '#7B241C', floor_map.shape, ax, None, None, plt_path=True)
         return f, ax
 
-    def render(self, mode='human', particles=None, particle_weights=None, floor_map=None, observation=None, gt_pose=None, current_step=None, curr_cluster=None, est_pose=None):
+    def render(self, mode='human', particles=None, particle_weights=None, floor_map=None, observation=None, gt_pose=None, current_step=None, curr_cluster=None, est_pose=None, info=None):
         """
         Render plots
         """
@@ -901,11 +957,11 @@ class LocalizeGibsonEnv(iGibsonEnv):
             else:
                 est_pose = np.squeeze(pfnet.PFCell.get_est_pose(particles=particles, particle_weights=particle_weights))
 
-            if self.use_pfnet and ("likelihood_map" in self.pf_params.custom_output):
+            # if self.use_pfnet and ("likelihood_map" in self.pf_params.custom_output):
                 # # belief map / likelihood map
-                likelihood_map = pfnet.PFCell.get_likelihood_map(particles=particles,
-                                                                 particle_weights=particle_weights,
-                                                                 floor_map=floor_map)
+            likelihood_map = pfnet.PFCell.get_likelihood_map(particles=particles,
+                                                                particle_weights=particle_weights,
+                                                                floor_map=floor_map)
                 # likelihood_map = np.zeros((*floor_map.shape[:2], 3))
                 # likelihood_map[:, :, :2] = likelihood_map_ext[:, :, :2]
                 # likelihood_map[:, :, 2] = np.arctan2(likelihood_map_ext[:, :, 3], likelihood_map_ext[:, :, 2])
@@ -917,12 +973,12 @@ class LocalizeGibsonEnv(iGibsonEnv):
                 # likelihood_map[:, :, 1] /= np.max(likelihood_map[:, :, 1])
                 # likelihood_map[:, :, 2] /= np.max(likelihood_map[:, :, 2])
 
-                map_plt = self.env_plts['map_plt']
-                self.env_plts['map_plt'] = render.draw_floor_map(0.025 * likelihood_map[..., 0] + likelihood_map[..., 1], self.org_map_shape, self.plt_ax[0], map_plt, cmap=None)
-            else:
-                # environment map
-                map_plt = self.env_plts['map_plt']
-                self.env_plts['map_plt'] = render.draw_floor_map(floor_map, self.org_map_shape, self.plt_ax[0], map_plt)
+            map_plt = self.env_plts['map_plt']
+            self.env_plts['map_plt'] = render.draw_floor_map(0.025 * likelihood_map[..., 0] + likelihood_map[..., 1], self.org_map_shape, self.plt_ax[0], map_plt, cmap=None)
+            # else:
+            #     # environment map
+            #     map_plt = self.env_plts['map_plt']
+            #     self.env_plts['map_plt'] = render.draw_floor_map(floor_map, self.org_map_shape, self.plt_ax[0], map_plt)
 
             # ground truth robot pose and heading
             color = '#7B241C'
@@ -1006,15 +1062,37 @@ class LocalizeGibsonEnv(iGibsonEnv):
             # step_txt_plt = render.draw_text(
             #     f' pose mse: {np.linalg.norm(pose_diff):02.3f}\n collisions: {self.collision_step:03.0f}/{self.current_step:03.0f}',
             #     '#7B241C', self.plt_ax, step_txt_plt)
+            itext = f"i: {float(info['coords']):.3f}, {float(info['orient']):.3f}, {float(info['pred']):.3f}\n" if info is not None else ""
             step_txt_plt = render.draw_text(
-                f' pose mse: {pose_error:02.3f}\n current step: {current_step//self.pf_params.loop:02.0f}\n last reward: {np.squeeze(self.last_reward):02.3f}\n collision: {has_collision}',
-                '#FFFFFF', self.plt_ax[0], step_txt_plt)
+                f"pose mse: {pose_error:.3f},{pose_diff[-1]:.3f}\n{itext}current step: {current_step//self.pf_params.loop:02.0f}\nlast reward: {np.squeeze(self.last_reward):.3f}\ncollision: {has_collision}",
+                '#FFFFFF', self.plt_ax[0], step_txt_plt, 
+                alpha=1.0, x=1.0, y=-0.1)
             self.env_plts['step_txt_plt'] = step_txt_plt
             # print(f'gt_pose: {gt_pose_mts}, est_pose: {est_pose_mts} in mts')
 
             self.plt_ax[0].legend([self.env_plts['robot_gt_plt']['position_plt'],
                                 self.env_plts['robot_est_plt']['position_plt']],
                                ["GT Pose", "Est Pose"], loc='upper left', fontsize=12)
+
+            next_subplot = 1
+            if (observation is not None) and isinstance(observation, dict):
+                if 'likelihood_map' in observation:
+                    self.plt_ax[next_subplot].imshow(0.025 * observation['likelihood_map'][..., 0] + observation['likelihood_map'][..., 1])
+                    next_subplot += 1
+            if (observation is not None) and self.pf_params.obs_mode == "rgb-depth":
+                self.plt_ax[next_subplot + 1].imshow(np.squeeze(observation[..., 3]))
+                observation = observation[..., :3]
+                self.plt_ax[next_subplot].imshow(np.squeeze(observation))
+            else:
+                if self.eps_obs.get('occupancy_grid', None):
+                    self.plt_ax[next_subplot].imshow(np.rot90(self.eps_obs['occupancy_grid'][-1], 1))
+                    next_subplot += 1
+                if self.eps_obs.get('rgb', None):
+                    self.plt_ax[next_subplot].imshow(self.eps_obs['rgb'][-1])
+                    next_subplot += 1
+                if self.eps_obs.get('depth', None):
+                    self.plt_ax[next_subplot].imshow(self.eps_obs['depth'][-1])
+                    next_subplot += 1
 
             # plot the local map extracted for the ground-truth pose
             local_map = pfnet.PFCell.transform_maps(global_map=tf.convert_to_tensor(floor_map[None], tf.float32),
@@ -1023,27 +1101,40 @@ class LocalizeGibsonEnv(iGibsonEnv):
                                                     window_scaler=self.pf_params.window_scaler,
                                                     agent_at_bottom=True,
                                                     flip_map=True)
-            self.plt_ax[1].imshow(np.squeeze(local_map))
+            self.plt_ax[next_subplot].imshow(np.squeeze(local_map))
+            
+            # remove any potential padding / empty space around it
+            l = .025 * likelihood_map[..., 0] + likelihood_map[..., 1]
+            bb = pfnet.PFCell.bounding_box(l != 0)
+            ylim = [max(bb[0] - 5, 0), min(bb[1] + 5, l.shape[0])]
+            xlim = [max(bb[2] - 5, 0), min(bb[3] + 5, l.shape[0])]
+            # make quadratic to fit plot nicely
+            sz = max([ylim[1] - ylim[0], xlim[1] - xlim[0]])
+            for lim in (ylim, xlim):
+                diff = (lim[1] - lim[0]) // 2
+                mid = lim[0] + diff
+                lim[0], lim[1] = mid - sz // 2, mid + sz // 2
+            self.plt_ax[0].set_ylim(ylim)
+            self.plt_ax[0].set_xlim(xlim)
+            
+            # f, ax = plt.subplots(1, 1)
+            # # ax.imshow(self.eps_obs['depth'][-1])
+            # ax.imshow(observation['depth_obs'])
+            # f.savefig('test2.png')
+            
+            # plot global map
+            # f, ax = plt.subplots(1, 1)
+            # ax.imshow(cv2.cvtColor(((floor_map >0) * 255).astype(np.uint8), cv2.COLOR_GRAY2BGR))
+            # # masked_data = np.ma.masked_where(likelihood_map[..., 1] == 0, likelihood_map[..., 1])
+            # # ax.imshow(masked_data[..., np.newaxis])
+            # ax.set_ylim(ylim)
+            # ax.set_xlim(xlim)
+            # ax.set_axis_off()
+            # f.tight_layout()
+            # f.savefig('test2.png')
+            
 
-            next_subplot = 2
-            if observation is not None:
-                if self.pf_params.obs_mode == "rgb-depth":
-                    self.plt_ax[next_subplot + 1].imshow(np.squeeze(observation[..., 3]))
-                    observation = observation[..., :3]
-                self.plt_ax[next_subplot].imshow(np.squeeze(observation))
-
-            else:
-                if self.eps_obs.get('rgb', None):
-                    self.plt_ax[next_subplot].imshow(self.eps_obs['rgb'][-1])
-                    next_subplot += 1
-                if self.eps_obs.get('depth', None):
-                    self.plt_ax[next_subplot].imshow(self.eps_obs['depth'][-1])
-                    next_subplot += 1
-                if self.eps_obs.get('occupancy_grid', None):
-                    self.plt_ax[next_subplot].imshow(self.eps_obs['occupancy_grid'][-1])
-                    next_subplot += 1
-
-
+            
             if self.pf_params.store_plot:
                 self.canvas.draw()
                 plt_img = np.array(self.canvas.renderer._renderer)
@@ -1116,5 +1207,5 @@ class LocalizeGibsonEnv(iGibsonEnv):
 
 
     def __del__(self):
-        if len(self.curr_plt_images) > 0:
-            self.close()
+        # if len(self.curr_plt_images) > 0:
+        self.close()

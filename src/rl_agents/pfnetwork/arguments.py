@@ -90,6 +90,11 @@ def parse_common_args(env_name: str, collect_data: bool = False, add_rl_args: bo
 
     argparser.add_argument('--multiple_gpus', type=str2bool, nargs='?', const=True, default=False, help="Use multiple GPUs.")
     argparser.add_argument('--resume_id', type=str, default=None, help='wandb id to resume')
+    argparser.add_argument('--resume_model_name', type=str, default="model.zip", help='wandb model to restore if resume_id is set')
+    argparser.add_argument('--eval_only', type=str2bool, nargs='?', const=True, default=False, help='Whether to run evaluation only on trained checkpoints')
+    
+    argparser.add_argument('--reward', type=str, default="pred", choices=['pred', 'belief'], help='wandb model to restore if resume_id is set')
+    argparser.add_argument('--collision_reward_weight', type=float, default=0.1, help='Penalty per collision.')
     
     if env_name == 'house3d':
         argparser.add_argument('--trainfiles', nargs='*', default=['/data2/honerkam/pfnet_data/train.tfrecords'], help='Data file(s) for training (tfrecord).')
@@ -99,12 +104,12 @@ def parse_common_args(env_name: str, collect_data: bool = False, add_rl_args: bo
     elif env_name == 'igibson':
         argparser.add_argument('--tfrecordpath', type=str, default='/data/honerkam/pfnet_data/', help='Folder path to training/evaluation/testing (tfrecord).')
         argparser.add_argument('--root_dir', type=str, default='./train_output', help='Root directory for logs/summaries/checkpoints.')
-        argparser.add_argument('--custom_output', nargs='*', default=['rgb_obs', 'depth_obs', 'occupancy_grid', 'floor_map', 'likelihood_map', 'obstacle_obs'], help='A comma-separated list of env observation types. Not used here: kmeans_cluster')
+        argparser.add_argument('--custom_output', nargs='*', default=['rgb_obs', 'depth_obs', 'occupancy_grid', 'floor_map', 'likelihood_map', 'obstacle_obs'], choices=['rgb_obs', 'depth_obs', 'occupancy_grid', 'floor_map', 'likelihood_map', 'obstacle_obs', 'task_obs'], help='A comma-separated list of env observation types. Not used here: kmeans_cluster')
         argparser.add_argument('--config_file', type=str, default=str(Path(__file__).parent.parent / 'configs' / 'locobot_pfnet_nav.yaml'), help='Config file for the experiment')
         argparser.add_argument('--scene_id', type=str, default='Rs', help='Environment scene')
         argparser.add_argument('--action_timestep', type=float, default=1.0 / 10.0, help='Action time step for the simulator')
         argparser.add_argument('--physics_timestep', type=float, default=1.0 / 40.0, help='Physics time step for the simulator')
-        argparser.add_argument('--env_mode', type=str, default='headless', help='igibson mode')
+        argparser.add_argument('--env_mode', type=str, default='headless', choices=['headless', 'gui'], help='igibson mode')
         argparser.add_argument('--loop', type=int, default=6, help='action repeat for igibson')
         argparser.add_argument('--num_clusters', type=int, default=10, help='number of clusters if using kmeans')
         argparser.add_argument('--particles_range', type=int, default=100, help='Pixel range to limit uniform distribution sampling +/- box particles_range center at robot pose')
@@ -112,7 +117,8 @@ def parse_common_args(env_name: str, collect_data: bool = False, add_rl_args: bo
         argparser.add_argument('--store_plot', type=str2bool, nargs='?', const=True, default=False, help="Whether to store igibson plots.")
         argparser.add_argument('--use_plot', type=str2bool, nargs='?', const=True, default=False, help="Whether to plot igibson stuff.")
         argparser.add_argument('--debug', type=str2bool, nargs='?', const=True, default=False, help="Helper for debugging.")
-        argparser.add_argument('--agent', type=str, default='avoid_agent', choices=[None, 'manual_agent', 'rnd_agent', 'avoid_agent', 'goalnav_agent', 'rl'], help='Agent Behavior')
+        argparser.add_argument('--agent', type=str, default='avoid_agent', choices=[None, 'manual_agent', 'rnd_agent', 'avoid_agent', 'goalnav_agent', 'turn_agent', 'rl'], help='Agent Behavior')
+        argparser.add_argument('--observe_steps', type=str2bool, nargs='?', const=True, default=True, help="Whether to observe the remaining number of steps.")
 
     if collect_data:
         argparser.add_argument('--filename', type=str, default='./test.tfrecord', help='The tf record')
@@ -130,9 +136,10 @@ def parse_common_args(env_name: str, collect_data: bool = False, add_rl_args: bo
         argparser.add_argument('--actor_learning_rate', type=float, default=3e-4, help='Actor learning rate')
         # argparser.add_argument('--critic_learning_rate', type=float, default=3e-4, help='Critic learning rate')
         # argparser.add_argument('--alpha_learning_rate', type=float, default=3e-4, help='Alpha learning rate')
+        argparser.add_argument('--rl_architecture', type=int, default=1, help='Architecture version.')
+        argparser.add_argument('--ent_coef', type=str, default='auto', help='SAC entropy coefficient: auto to learn, auto_0.1 to learn with initial value 0.1')
 
         # argparser.add_argument('--use_parallel_envs', type=str2bool, nargs='?', const=True, default=False, help='Whether to use parallel env or not')
-        argparser.add_argument('--eval_only', type=str2bool, nargs='?', const=True, default=False, help='Whether to run evaluation only on trained checkpoints')
         # argparser.add_argument('--eval_deterministic', type=str2bool, nargs='?', const=True, default=False, help='Whether to run evaluation using a deterministic policy')
         argparser.add_argument('--num_eval_episodes', type=int, default=10, help='The number of episodes to run eval on.')
         argparser.add_argument('--eval_interval', type=int, default=5000, help='Run eval every eval_interval train steps')
@@ -144,6 +151,7 @@ def parse_common_args(env_name: str, collect_data: bool = False, add_rl_args: bo
     if params.debug:
         tf.config.run_functions_eagerly(True)
         params.use_tf_function = False
+        tf.data.experimental.enable_debug_mode()
     else:
         params.use_tf_function = True
 

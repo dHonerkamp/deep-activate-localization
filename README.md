@@ -25,21 +25,19 @@ For more details to train/test particle filter or rl agent [refer](https://githu
 1. Install virtual environment/package management platform like anaconda/[miniconda](https://docs.conda.io/en/latest/miniconda.html) or python virtualenv. Following assumes anaconda is installed.
 2. Create conda environment
    ```
-
-[//]: # (      $ conda create -y -n igibson python=3.7)
       conda env create -f environment.yaml
-      source activate igibson
+      conda activate igibson
       export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/
-    ```
+   ```
 3. Setup iGibson2.0 environment (forked repository). For latest installation procedure always refer to official doc [link](http://svl.stanford.edu/igibson/docs/installation.html)
    ```
-      <root_folder>$ git clone --branch master https://github.com/suresh-guttikonda/iGibson.git --recursive
-      <root_folder>$ cd iGibson
-      <root_folder>/iGibson$ pip3 install -e .
+      git clone --branch master https://github.com/suresh-guttikonda/iGibson.git --recursive
+      cd iGibson
+      pip3 install -e .
    ```
 4. Test igibson installation is successful
    ```
-      <root_folder>/iGibson$ python
+      python
       >>> import igibson
    ```
 5. Download required igibson's assets (robot's urdf, demo apartment, and others). For more datasets [refer](http://svl.stanford.edu/igibson/docs/dataset.html)
@@ -89,10 +87,20 @@ For more details to train/test particle filter or rl agent [refer](https://githu
 [//]: # (   ```)
 8. Test tensorflow installation is successful
    ```
-      <root_folder>$ python
+      python
       >>> import tensorflow as tf
       >>> tf.config.list_logical_devices()
+
+      python3 -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+
    ```
+if it doesn't work:
+```
+pip install --upgrade pip
+pip uninstall tensorflow
+pip install tensorflow==2.6.0
+```
+
 9. Install TF Agents (forked repository)
    ```
       <root_folder>/iGibson$ cd ..

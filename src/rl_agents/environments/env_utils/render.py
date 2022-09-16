@@ -9,7 +9,7 @@ from matplotlib import patches
 from matplotlib.patches import Wedge
 from scipy.special import softmax
 
-def draw_text(text, bgcolor, plt_ax, text_plt):
+def draw_text(text, bgcolor, plt_ax, text_plt, alpha=1, x=0.97, y=0.97):
     """
     Render the text
     :param str text: text to render
@@ -21,9 +21,9 @@ def draw_text(text, bgcolor, plt_ax, text_plt):
 
     if text_plt is None:
         # render text with color
-        text_plt = plt_ax.text(0.97, 0.97, text, backgroundcolor=bgcolor,
+        text_plt = plt_ax.text(x, y, text, backgroundcolor=bgcolor,
                         horizontalalignment='right', verticalalignment='top',
-                        transform=plt_ax.transAxes, fontsize=12)
+                        transform=plt_ax.transAxes, fontsize=12, alpha=alpha)
     else:
         # update existing text
         text_plt.set_text(text)
@@ -86,7 +86,7 @@ def draw_particles_pose(particles, weights, map_shape, particles_plt, scale=1):
 
     return particles_plt
 
-def draw_robot_pose(robot_pose, color, map_shape, plt_ax, position_plt, heading_plt, plt_path=False, scale=1):
+def draw_robot_pose(robot_pose, color, map_shape, plt_ax, position_plt, heading_plt, plt_path=False, scale=1, alpha=0.7):
     """
     Render the robot pose on the scene floor map
     :param ndarray robot_pose: ndarray representing robot position (x, y) and heading (theta)
@@ -104,15 +104,16 @@ def draw_robot_pose(robot_pose, color, map_shape, plt_ax, position_plt, heading_
     y, x, heading = np.squeeze(robot_pose)
     # height, width, channel = map_shape
 
-    heading_len = robot_radius = 3 * 1.0
-    xdata = [x, x + (robot_radius + heading_len) * np.cos(heading)]
-    ydata = [y, y + (robot_radius + heading_len) * np.sin(heading)]
+    robot_radius = 2.5
+    heading_len = 3.45 * 1.0
+    xdata = [x, x + heading_len * np.cos(heading)]
+    ydata = [y, y + heading_len * np.sin(heading)]
 
     if position_plt == None:
         # render robot position and heading with color
-        position_plt = Wedge((x, y), robot_radius, 0, 360, color=color, alpha=0.5)
+        position_plt = Wedge((x, y), robot_radius, 0, 360, color=color, alpha=alpha)
         plt_ax.add_artist(position_plt)
-        heading_plt = plt_ax.plot(xdata, ydata, color=color, alpha=0.5)[0]
+        heading_plt = plt_ax.plot(xdata, ydata, color=color, alpha=alpha, linewidth=2.5)[0]
     else:
         # update existing robot position and heading
         position_plt.update({'center': [x, y]})
