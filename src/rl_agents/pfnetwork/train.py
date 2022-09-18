@@ -32,9 +32,6 @@ def calc_metrics(loss_dict, prefix: str) -> dict:
     metrics[f"{prefix}/rmse_orient_mean"] = tf.reduce_mean(tf.sqrt(loss_dict['orient']))
     metrics[f"{prefix}/rmse_orient_final"] = tf.reduce_mean(tf.sqrt(loss_dict['orient'][..., -1]))
 
-    # metrics[f"{prefix}/rmse_angular_mean"] = tf.reduce_mean(tf.sqrt(loss_dict['angular']))
-    # metrics[f"{prefix}/rmse_angular_final"] = tf.reduce_mean(tf.sqrt(loss_dict['angular'][..., -1]))
-    
     metrics[f"{prefix}/pred_final"] = tf.reduce_mean(loss_dict['pred'][..., -1])
 
     return metrics
@@ -60,9 +57,6 @@ def init_pfnet_model(params, is_igibson: bool):
 
     # load model from checkpoint file
     if params.pfnet_loadpath:
-        # tf.saved_model.save(my_model, "the_saved_model")
-        # new_model = tf.saved_model.load("the_saved_model")
-        # pass
         pfnet_model.load_weights(params.pfnet_loadpath)
         print("=====> loaded pf model checkpoint " + params.pfnet_loadpath)
 
@@ -71,17 +65,6 @@ def init_pfnet_model(params, is_igibson: bool):
         pfnet_model = tf.function(pfnet_model)
 
     return pfnet_model
-
-# def rollout_trajectory(data, model):
-#     loss_dicts, est_poses = [], []
-#     for i in range(data['observation'].shape[1]):
-#         est_pose = model(global_map=data['global_map'], observation=data['observation'][:, i], odometry=data['odometry'][:, i])
-#         loss_dict = model.compute_mse_loss(true_states=data['true_states'][:, i], trav_map_resolution=params.map_pixel_in_meters)
-#         l = pfnet_loss.compute_mse_loss(model.particles[:, None], model.particle_weights[:, None], data['true_states'][:, i][:, None], params.map_pixel_in_meters)
-#         est_poses.append(est_pose)
-#         loss_dicts.append(loss_dict)
-#
-#     return stack_loss_dicts(loss_dicts, 1), est_poses
 
 
 # Recommended: wrap to tf.graph for better performance
@@ -97,20 +80,6 @@ def train_step(data, model, optimizer, train_loss, map_pixel_in_meters: float):
         # forward pass over
         output, state = model((input, state), training=True)
         loss_dict = pfnet.PFCell.compute_mse_loss(particles=output[0], particle_weights=output[1], true_states=data['true_states'], trav_map_resolution=map_pixel_in_meters)
-
-        # loss_dict, est_poses = rollout_trajectory(data, model)
-        # pred_losses = []
-        # for i in range(data['observation'].shape[1]):
-        #     est_pose = model(global_map=data['global_map'], observation=data['observation'][:, i], odometry=data['odometry'][:, i])
-        #     loss_dict = model.compute_mse_loss(true_states=data['true_states'][:, i], trav_map_resolution=params.map_pixel_in_meters)
-        #     pred_losses.append(loss_dict['pred'])
-
-        # compute loss
-        # particle_states, particle_weights = output
-        # assert False, "Use model.compute_mse_loss(), check that identical with this one"
-        # loss_dict = pfnet_loss.compute_mse_loss(particle_states, particle_weights, true_states,
-        #                                         params.map_pixel_in_meters)
-        # loss_pred = loss_dict['pred']
 
         loss_pred = tf.reduce_mean(loss_dict['pred'])
 
@@ -145,12 +114,6 @@ def vis_output(env, output, state, data):
 def eval_step(data, model, eval_loss, map_pixel_in_meters: float):
     """ Run one evaluation step """
     # forward pass
-    # pred_losses = []
-    # for i in range(data['observation'].shape[1]):
-    #     est_pose = model(global_map=data['global_map'], observation=data['observation'][:, i], odometry=data['odometry'][:, i])
-    #     loss_dict = model.compute_mse_loss(true_states=data['true_states'][:, i], trav_map_resolution=params.map_pixel_in_meters)
-    #     pred_losses.append(loss_dict['pred'])
-    # loss_dict, est_poses = rollout_trajectory(data, model)
     state = [data['init_particles'], data['init_particle_weights'], data['global_map']]
     input = [data['observation'], data['odometry']]
     output, state = model((input, state), training=False)
@@ -158,18 +121,8 @@ def eval_step(data, model, eval_loss, map_pixel_in_meters: float):
                                               true_states=data['true_states'],
                                               trav_map_resolution=map_pixel_in_meters)
 
-    # output, state = model(model_input, training=False)
-
-    # compute loss
-    # particle_states, particle_weights = output
-    # loss_dict = pfnet_loss.compute_mse_loss(particle_states, particle_weights, true_states, params.map_pixel_in_meters)
-    # loss_pred = loss_dict['pred']
-
     loss_pred = tf.reduce_mean(loss_dict['pred'])
     eval_loss(loss_pred)  # overall trajectory loss
-
-    # if params.debug:
-    #     model.__call__(input, state)
 
     return loss_dict, output, state
 
@@ -193,15 +146,6 @@ def run_training(params):
 
     root_dir = os.path.expanduser(params.root_dir)
     train_dir = os.path.join(root_dir, 'train')
-    # eval_dir = os.path.join(root_dir, 'eval')
-    # test_dir = os.path.join(root_dir, 'test')
-
-    # batch_size = params.batch_size
-    # num_particles = params.num_particles
-    # trajlen = params.trajlen
-    # num_train_batches = params.num_train_samples // params.batch_size
-    # num_eval_batches = params.num_eval_samples // params.batch_size
-    # num_test_batches = params.num_test_samples // params.batch_size
 
     # data
     train_ds = preprocess.get_dataflow(params.trainfiles, params.batch_size, params.s_buffer_size, is_training=True)
@@ -210,7 +154,6 @@ def run_training(params):
 
     # pf model
     model = init_pfnet_model(params, is_igibson=False)
-    # model = pfnet.pfnet_model(params, is_igibson=False)
 
     # load model from checkpoint file
     if params.pfnet_loadpath:
@@ -224,10 +167,6 @@ def run_training(params):
     train_loss = keras.metrics.Mean('train_loss', dtype=tf.float32)
     eval_loss = keras.metrics.Mean('eval_loss', dtype=tf.float32)
 
-    # Logging
-    # summaries_flush_secs=10
-    # train_summary_writer = tf.compat.v2.summary.create_file_writer(train_dir, flush_millis=summaries_flush_secs * 1000)
-    # eval_summary_writer = tf.compat.v2.summary.create_file_writer(eval_dir, flush_millis=summaries_flush_secs * 1000)
     print(params)
 
     # repeat for a fixed number of epochs
@@ -236,39 +175,13 @@ def run_training(params):
         train_loss_dicts = []
         # run training over all training samples in an epoch
         for train_idx in tqdm(range(params.num_train_batches), desc=f"Epoch {epoch}/{params.epochs}"):
-            # t = time.time()
             raw_train_record = next(train_itr)
             processed_data = prepare_data(raw_train_record, params=params)
-            # data_sample = preprocess.transform_raw_record(raw_train_record, params)
-            #
-            # observation = tf.convert_to_tensor(data_sample['observation'], dtype=tf.float32)
-            # odometry = tf.convert_to_tensor(data_sample['odometry'], dtype=tf.float32)
-            # true_states = tf.convert_to_tensor(data_sample['true_states'], dtype=tf.float32)
-            # global_map = tf.convert_to_tensor(data_sample['global_map'], dtype=tf.float32)
-            # init_particles = tf.convert_to_tensor(data_sample['init_particles'], dtype=tf.float32)
-            # init_particle_weights = tf.constant(np.log(1.0/float(params.num_particles)), shape=(params.batch_size, params.num_particles), dtype=tf.float32)
-
-            # # start trajectory with initial particles and weights
-            # state = [init_particles, init_particle_weights, global_map]
-            #
-            # # if stateful: reset RNN s.t. initial_state is set to initial particles and weights
-            # # if non-stateful: pass the state explicity every step
-            # if params.stateful:
-            #     model.layers[-1].reset_states(state)    # RNN layer
-            #
-            # # run training over trajectory
-            # input = [observation, odometry]
-            # model_input = (input, state)
 
             # model.reset_supervised(processed_data['init_particles'], processed_data['init_particle_weights'])
             train_loss_dict, train_output, train_state = train_step(data=processed_data, model=model, optimizer=optimizer, train_loss=train_loss, map_pixel_in_meters=params.map_pixel_in_meters)
             train_loss_dicts.append(train_loss_dict)
-            # print(f"{train_idx}/{num_train_batches}: {(time.time() - t)/60:.3f}")
 
-
-        # log epoch training stats
-        # with train_summary_writer.as_default():
-        #     tf.summary.scalar('loss', train_loss.result(), step=epoch)
 
         if params.run_evaluation:
             eval_itr = eval_ds.as_numpy_iterator()
@@ -277,45 +190,13 @@ def run_training(params):
             for eval_idx in tqdm(range(params.num_eval_batches), desc=f"Epoch {epoch}/{params.epochs}"):
                 raw_eval_record = next(eval_itr)
                 processed_data = prepare_data(raw_eval_record, params=params)
-                # data_sample = preprocess.transform_raw_record(raw_eval_record, params)
-                #
-                # observation = tf.convert_to_tensor(data_sample['observation'], dtype=tf.float32)
-                # odometry = tf.convert_to_tensor(data_sample['odometry'], dtype=tf.float32)
-                # true_states = tf.convert_to_tensor(data_sample['true_states'], dtype=tf.float32)
-                # global_map = tf.convert_to_tensor(data_sample['global_map'], dtype=tf.float32)
-                # init_particles = tf.convert_to_tensor(data_sample['init_particles'], dtype=tf.float32)
-                # init_particle_weights = tf.constant(np.log(1.0/float(num_particles)), shape=(batch_size, num_particles), dtype=tf.float32)
-                #
-                # # start trajectory with initial particles and weights
-                # state = [init_particles, init_particle_weights, global_map]
-                #
-                # # if stateful: reset RNN s.t. initial_state is set to initial particles and weights
-                # # if non-stateful: pass the state explicity every step
-                # # if params.stateful:
-                # #     model.layers[-1].reset_states(state)    # RNN layer
-                #
-                # # run evaluation over trajectory
-                # input = [observation, odometry]
-                # model_input = (input, state)
 
-                # eval_step(model_input, true_states)
-                # model.reset_supervised(processed_data['init_particles'], processed_data['init_particle_weights'])
+
                 eval_loss_dict, eval_output, eval_state = eval_step(data=processed_data,
                                                                     model=model,
                                                                     eval_loss=eval_loss,
                                                                     map_pixel_in_meters=params.map_pixel_in_meters)
                 eval_loss_dicts.append(eval_loss_dict)
-
-            # log epoch evaluation stats
-            # with eval_summary_writer.as_default():
-            #     tf.summary.scalar('loss', eval_loss.result(), step=epoch)
-            # wandb.log({'eval_loss': eval_loss.result()}, step=epoch)
-
-            # # Save the weights
-            # print("=====> saving evaluation model ")
-            # model.save_weights(
-            #     os.path.join(eval_dir, f'chks/checkpoint_{epoch}_{eval_loss.result():03.3f}/pfnet_checkpoint')
-            # )
 
         if epoch % 5 == 0:
             print("=====> saving trained model ")
@@ -342,7 +223,6 @@ def run_training(params):
         raw_eval_record = next(test_itr)
         processed_data = prepare_data(raw_eval_record, params=params)
 
-        # model.reset_supervised(processed_data['init_particles'], processed_data['init_particle_weights'])
         test_loss_dict = eval_step(data=processed_data, model=model, eval_loss=eval_loss)
         test_loss_dicts.append(test_loss_dict)
 
@@ -363,7 +243,6 @@ if __name__ == '__main__':
     run = wandb.init(config=params, name=run_name, project=WANDB_PROJECT, sync_tensorboard=True)
 
     params.run_evaluation = True
-    # params.s_buffer_size = 500
 
     run_training(params)
 
