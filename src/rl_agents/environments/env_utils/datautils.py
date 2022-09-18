@@ -35,10 +35,6 @@ def get_floor_map(scene_id, floor_num, trav_map_resolution, trav_map_erosion, pa
         os.path.join(get_scene_path(scene_id), f'floor_trav_{floor_num}.png'))
     )
 
-    # remove unnecessary empty map parts
-    # bb = pfnet.PFCell.bounding_box(obstacle_map == 0)
-    # obstacle_map = obstacle_map[bb[0]: bb[1], bb[2]: bb[3]]
-    # trav_map = trav_map[bb[0]: bb[1], bb[2]: bb[3]]
 
     # 0: free / unexplored / outside map, 1: obstacle
     # NOTE: shouldn't mather that outside the map is not unexplored, because this will always be unexplored in the lidar scan and so will always be masked out
@@ -54,12 +50,6 @@ def get_floor_map(scene_id, floor_num, trav_map_resolution, trav_map_erosion, pa
     # plt.imshow(occupancy_map_small > 0.1);
     # plt.show()
 
-    # o = obstacle_map.copy()
-    # flood_fill_flags = 4
-    # h, w = o.shape[:2]
-    # flood_mask = np.zeros((h + 2, w + 2), dtype=np.uint8)
-    # cv2.floodFill(o, mask=None, seedPoint=(h//2, w//2), newVal=125)
-    # plt.imshow(o); plt.show()
 
     trav_map[obstacle_map == 0] = 0
 
@@ -100,9 +90,6 @@ def get_random_points_map(npoints, trav_map, true_mask = None):
 
     xy_map = np.stack([trav_space[0][idx], trav_space[1][idx], orn], 1)
 
-    # xy_map = np.array([trav_space[0][idx], trav_space[1][idx]])
-    # x, y = self.scene.map_to_world(xy_map)
-    # return np.array([x, y])
     return xy_map
 
 
@@ -124,9 +111,6 @@ def get_random_particles(num_particles, particles_distr, robot_pose, trav_map, p
 
     assert list(robot_pose.shape[1:]) == [3], f'{robot_pose.shape}'
     assert list(particles_cov.shape) == [3, 3], f'{particles_cov.shape}'
-    # assert list(scene_map.shape[2:]) == [1], f'{scene_map.shape}'
-    #
-    # assert np.all(np.unique(scene_map) == np.array([0, 1]))
 
     particles = []
     batches = robot_pose.shape[0]
@@ -147,25 +131,6 @@ def get_random_particles(num_particles, particles_distr, robot_pose, trav_map, p
                             1, -1)
             b_particles = get_random_points_map(npoints=num_particles, trav_map=trav_map, true_mask=mask)
 
-            # get bounding box, centered around the offset, for more efficient sampling
-            # rmin, rmax, cmin, cmax = self.bounding_box(scene_map)
-            # rmin, rmax, cmin, cmax = PFCell.bounding_box(scene_map, center, particles_range)
-
-            # # check if sampled pose is in environment map's free space
-            # while sample_i < num_particles:
-            #     particle = np.random.uniform(low=(rmin, cmin, 0.0), high=(rmax, cmax, 2.0 * np.pi), size=(3,))
-            #     # reject if mask is zero
-            #     if not scene_map[int(np.rint(particle[0])), int(np.rint(particle[1]))]:
-            #         continue
-            #     b_particles.append([particle[1], particle[0], particle[2]])
-            #
-            #     # import matplotlib.pyplot as plt
-            #     # s = scene_map.copy()
-            #     # s[int(np.rint(robot_pose[..., 1])), int(np.rint(robot_pose[..., 0]))] = 2
-            #     # s[int(np.rint(particle[0])), int(np.rint(particle[1]))] = 3
-            #     # plt.imshow(s); plt.show()
-            #
-            #     sample_i = sample_i + 1
             particles.append(b_particles)
     elif particles_distr == 'gaussian':
         # iterate per batch_size
@@ -219,174 +184,6 @@ def calc_odometry(old_pose, new_pose):
     return odometry
 
 
-def calc_velocity_commands(old_pose, new_pose, dt=0.1):
-    """
-    Calculate the velocity model command between two poses
-    :param ndarray old_pose: pose1 (x, y, theta)
-    :param ndarray new_pose: pose2 (x, y, theta)
-    :param float dt: time interval
-    :return ndarray: velocity command (linear_vel, angular_vel, final_rotation)
-    """
-
-    x1, y1, th1 = old_pose
-    x2, y2, th2 = new_pose
-
-    if x1==x2 and y1==y2:
-        # only angular motion
-        linear_velocity = 0
-        angular_velocity = 0
-    elif x1!=x2 and np.tan(th1) == np.tan( (y1-y2)/(x1-x2) ):
-        # only linear motion
-        linear_velocity = (x2-x1)/dt
-        angular_velocity = 0
-    else:
-        # both linear + angular motion
-        mu = 0.5 * ( ((x1-x2)*np.cos(th1) + (y1-y2)*np.sin(th1))
-                 / ((y1-y2)*np.cos(th1) - (x1-x2)*np.sin(th1)) )
-        x_c = (x1+x2) * 0.5 + mu * (y1-y2)
-        y_c = (y1+y2) * 0.5 - mu * (x1-x2)
-        r_c = np.sqrt( (x1-x_c)**2 + (y1-y_c)**2 )
-        delta_th = np.arctan2(y2-y_c, x2-x_c) - np.arctan2(y1-y_c, x1-x_c)
-
-        angular_velocity = delta_th/dt
-        # HACK: to handle unambiguous postive/negative quadrants
-        if np.arctan2(y1-y_c, x1-x_c) < 0:
-            linear_velocity = angular_velocity * r_c
-        else:
-            linear_velocity = -angular_velocity * r_c
-
-    final_rotation = (th2-th1)/dt - angular_velocity
-    return np.array([linear_velocity, angular_velocity, final_rotation])
-
-
-def sample_motion_odometry(old_pose, odometry):
-    """
-    Sample new pose based on give pose and odometry
-    :param ndarray old_pose: given pose (x, y, theta)
-    :param ndarray odometry: given odometry (odom_x, odom_y, odom_th)
-    :return ndarray: new pose (x, y, theta)
-    """
-    x1, y1, th1 = old_pose
-    odom_x, odom_y, odom_th = odometry
-
-    th1 = normalize(th1)
-    sin = np.sin(th1)
-    cos = np.cos(th1)
-
-    x2 = x1 + (cos * odom_x - sin * odom_y)
-    y2 = y1 + (sin * odom_x + cos * odom_y)
-    th2 = normalize(th1 + odom_th)
-
-    new_pose = np.array([x2, y2, th2])
-    return new_pose
-
-
-def sample_motion_velocity(old_pose, velocity, dt=0.1):
-    """
-    Sample new pose based on give pose and velocity commands
-    :param ndarray old_pose: given pose (x, y, theta)
-    :param ndarray velocity: velocity model (linear_vel, angular_vel, final_rotation)
-    :param float dt: time interval
-    :return ndarray: new pose (x, y, theta)
-    """
-    x1, y1, th1 = old_pose
-    linear_vel, angular_vel, final_rotation = velocity
-
-    if angular_vel == 0:
-        x2 = x1 + linear_vel*dt
-        y2 = y1
-    else:
-        r = linear_vel/angular_vel
-        x2 = x1 - r*np.sin(th1) + r*np.sin(th1 + angular_vel*dt)
-        y2 = y1 + r*np.cos(th1) - r*np.cos(th1 + angular_vel*dt)
-    th2 = th1 + angular_vel*dt + final_rotation*dt
-
-    new_pose = np.array([x2, y2, th2])
-    return new_pose
-
-
-def decode_image(img, resize=None):
-    """
-    Decode image
-    :param img: image encoded as a png in a string
-    :param resize: tuple of width, height, new size of image (optional)
-    :return np.ndarray: image (k, H, W, 1)
-    """
-    # TODO
-    # img = cv2.imdecode(img, -1)
-    if resize is not None:
-        img = cv2.resize(img, resize)
-    return img
-
-
-def process_raw_map(image):
-    """
-    Decode and normalize image
-    :param image: floor map image as ndarray (H, W)
-    :return np.ndarray: image (H, W, 1)
-        white: empty space, black: occupied space
-    """
-
-    assert np.min(image) >= 0. and np.max(image) >= 1. and np.max(image) <= 255.
-    image = normalize_map(np.atleast_3d(image.astype(np.float32)))
-    assert np.min(image) >= 0. and np.max(image) <= 2.
-
-    return image
-
-
-def normalize_map(x):
-    """
-    Normalize map input
-    :param x: map input (H, W, ch)
-    :return np.ndarray: normalized map (H, W, ch)
-    """
-    # rescale to [0, 2], later zero padding will produce equivalent obstacle
-    return x * (2.0 / 255.0)
-
-
-def normalize_observation(x):
-    """
-    Normalize observation input: an rgb image or a depth image
-    :param x: observation input (56, 56, ch)
-    :return np.ndarray: normalized observation (56, 56, ch)
-    """
-    # resale to [-1, 1]
-    if x.ndim == 2 or x.shape[2] == 1:  # depth
-        return x * (2.0 / 100.0) - 1.0
-    else:  # rgb
-        return x * (2.0 / 255.0) - 1.0
-
-
-def denormalize_observation(x):
-    """
-    Denormalize observation input to store efficiently
-    :param x: observation input (B, 56, 56, ch)
-    :return np.ndarray: denormalized observation (B, 56, 56, ch)
-    """
-    # resale to [0, 255]
-    if x.ndim == 2 or x.shape[-1] == 1:  # depth
-        x = (x + 1.0) * (100.0 / 2.0)
-    else:  # rgb
-        x = (x + 1.0) * (255.0 / 2.0)
-    return x.astype(np.int32)
-
-
-def process_raw_image(image, resize=(56, 56)):
-    """
-    Decode and normalize image
-    :param image: image encoded as a png (H, W, ch)
-    :param resize: resize image (new_H, new_W)
-    :return np.ndarray: images (new_H, new_W, ch) normalized for training
-    """
-
-    # assert np.min(image)>=0. and np.max(image)>=1. and np.max(image)<=255.
-    image = decode_image(image, resize)
-    image = normalize_observation(np.atleast_3d(image.astype(np.float32)))
-    assert np.min(image)>=-1. and np.max(image)<=1.
-
-    return image
-
-
 def get_discrete_action(max_lin_vel, max_ang_vel):
     """
     Get manual keyboard action
@@ -412,39 +209,6 @@ def get_discrete_action(max_lin_vel, max_ang_vel):
 
     return action
 
-
-# def transform_position(position, map_shape, map_pixel_in_meters):
-#     """
-#     Transform position from 2D co-ordinate space to pixel space
-#     :param ndarray position: [x, y] in co-ordinate space
-#     :param tuple map_shape: [height, width, channel] of the map the co-ordinated need to be transformed
-#     :param float map_pixel_in_meters: The width (and height) of a pixel of the map in meters
-#     :return ndarray: position [x, y] in pixel space of map
-#     """
-#     x, y = position
-#     height, width, channel = map_shape
-#
-#     x = (x / map_pixel_in_meters) + width / 2
-#     y = (y / map_pixel_in_meters) + height / 2
-#
-#     return np.array([x, y])
-
-
-# def inv_transform_pose(pose, map_shape, map_pixel_in_meters):
-#     """
-#     Transform pose from pixel space to 2D co-ordinate space
-#     :param ndarray pose: [x, y, theta] in pixel space of map
-#     :param tuple map_shape: [height, width, channel] of the map the co-ordinated need to be transformed
-#     :param float map_pixel_in_meters: The width (and height) of a pixel of the map in meters
-#     :return ndarray: pose [x, y, theta] in co-ordinate space
-#     """
-#     x, y, theta = pose
-#     height, width, channel = map_shape
-#
-#     x = (x - width / 2) * map_pixel_in_meters
-#     y = (y - height / 2) * map_pixel_in_meters
-#
-#     return np.array([x, y, theta])
 
 def obstacle_avoidance(state, max_lin_vel, max_ang_vel):
     """
@@ -559,51 +323,17 @@ def gather_episode_stats(env, params, sample_particles=False):
             s[int(np.rint(x)), int(np.rint(y))] = 2
         plt.imshow(s); plt.show()
 
-    # TODO: remove
-    # # p = env.plan_base_motion(env.task.target_pos)
-    # path, dist = env.scene.get_shortest_path(env.task.floor_num, env.scene.map_to_world(old_pose)[:2], env.task.target_pos[:2], entire_path=True)
-    # rel_path = []
-    # for p in path:
-    #     rel_path.append(env.task.global_to_local(env, [p[0], p[1], 0]))
-    # # lin_vel = params.max_lin_vel * rel_path[0] / np.linalg.norm(rel_path[0])
-    # lin_vel = params.max_lin_vel
-    # angle = np.math.atan2(rel_path[0][1], rel_path[0][0])
-    # angular_vel = np.clip(angle, -params.max_ang_vel, params.max_ang_vel)
-
-    # from matplotlib import pyplot as plt
-    # s = trav_map.copy()
-    # kernel = np.ones((2, 2), 'uint8')
-    # dilate_img = cv2.erode(s, kernel, iterations=1)
-
     odom = calc_odometry(old_pose, old_pose)
     assert list(odom.shape) == [3]
     odometry.append(odom)
 
     for _ in range(trajlen - 1):
         action = select_action(agent=agent, params=params, obs=obs, env=env, old_pose=old_pose)
-        # if agent == 'manual_agent':
-        #     action = get_discrete_action(max_lin_vel, max_ang_vel)
-        # elif agent == 'goalnav_agent':
-        #     action = goal_nav_agent(env=env, current_pose_pixel=old_pose, params=params)
-        # else:
-        #     action = obstacle_avoidance(obs['obstacle_obs'], max_lin_vel, max_ang_vel)
-
-        # take action and get new observation
         obs, reward, done, _ = env.step(action)
 
-        # # process [0, 1] ->[0, 255] -> [-1, +1] range
-        # rgb = process_raw_image(obs['rgb_obs']*255, resize=(56, 56))
         rgb_observation.append(obs['rgb_obs'])
-        #
-        # # process [0, 1] ->[0, 100] -> [-1, +1] range
-        # depth = process_raw_image(obs['depth_obs']*100, resize=(56, 56))
         depth_observation.append(obs['depth_obs'])
-        #
-        # # process [0, 0.5, 1]
-        # occupancy_grid = np.atleast_3d(decode_image(obs['occupancy_grid'], resize=(56, 56)).astype(np.float32))
         occupancy_grid_observation.append(obs['occupancy_grid'])
-
-        # left, left_front, right_front, right = obs['obstacle_obs'] # obstacle (not)present
 
         # get new robot state after taking action
         new_pose = env.get_robot_pose(env.robots[0].calc_state())
@@ -620,24 +350,9 @@ def gather_episode_stats(env, params, sample_particles=False):
             target_pixel = np.concatenate([env.world_to_map(env.task.target_pos[:2]), [env.task.target_pos[2]]])
             env.render(gt_pose=new_pose, est_pose=target_pixel)
 
-    # end of episode
-    # odom = calc_odometry(old_pose, new_pose)
-    # odometry.append(odom)
-
     if sample_particles:
         raise NotImplementedError()
-    #     num_particles = params.num_particles
-    #     particles_cov = params.init_particles_cov
-    #     particles_distr = params.init_particles_distr
-    #     # sample random particles and corresponding weights
-    #     init_particles = PFCell.get_random_particles(num_particles, particles_distr, true_poses[0], env.trav_map, particles_cov).squeeze(axis=0)
-    #     init_particle_weights = np.full((num_particles,), (1. / num_particles))
-    #     assert list(init_particles.shape) == [num_particles, 3]
-    #     assert list(init_particle_weights.shape) == [num_particles]
-    #
-    # else:
-    #     init_particles = None
-    #     init_particle_weights = None
+
 
     episode_data = {
         'scene_id': scene_id, # str
@@ -649,65 +364,9 @@ def gather_episode_stats(env, params, sample_particles=False):
         'rgb_observation': np.stack(rgb_observation),  # (trajlen, height, width, 3)
         'depth_observation': np.stack(depth_observation),  # (trajlen, height, width, 1)
         'occupancy_grid': np.stack(occupancy_grid_observation),  # (trajlen, height, width, 1)
-        # 'init_particles': init_particles,  # (num_particles, 3)
-        # 'init_particle_weights': init_particle_weights,  # (num_particles,)
     }
 
     return episode_data
-
-
-# def get_batch_data(env, params):
-#     """
-#     Gather batch of episode stats
-#     :param env: igibson env instance
-#     :param params: parsed parameters
-#     :return dict: episode stats data containing:
-#         odometry, true poses, observation, particles, particles weights, floor map
-#     """
-#
-#     trajlen = params.trajlen
-#     batch_size = params.batch_size
-#     map_size = params.global_map_size
-#     num_particles = params.num_particles
-#
-#     odometry = []
-#     floor_map = []
-#     # obstacle_map = []
-#     observation = []
-#     true_states = []
-#     init_particles = []
-#     init_particle_weights = []
-#
-#     for _ in range(batch_size):
-#         episode_data = gather_episode_stats(env, params, sample_particles=True)
-#
-#         odometry.append(episode_data['odometry'])
-#         floor_map.append(episode_data['floor_map'])
-#         # obstacle_map.append(episode_data['obstacle_map'])
-#         true_states.append(episode_data['true_states'])
-#         observation.append(episode_data['observation'])
-#         init_particles.append(episode_data['init_particles'])
-#         init_particle_weights.append(episode_data['init_particle_weights'])
-#
-#     batch_data = {}
-#     batch_data['odometry'] = np.stack(odometry)
-#     batch_data['floor_map'] = np.stack(floor_map)
-#     # batch_data['obstacle_map'] = np.stack(obstacle_map)
-#     batch_data['true_states'] = np.stack(true_states)
-#     batch_data['observation'] = np.stack(observation)
-#     batch_data['init_particles'] = np.stack(init_particles)
-#     batch_data['init_particle_weights'] = np.stack(init_particle_weights)
-#
-#     # sanity check
-#     assert list(batch_data['odometry'].shape) == [batch_size, trajlen, 3]
-#     assert list(batch_data['true_states'].shape) == [batch_size, trajlen, 3]
-#     assert list(batch_data['observation'].shape) == [batch_size, trajlen, 56, 56, 3]
-#     assert list(batch_data['init_particles'].shape) == [batch_size, num_particles, 3]
-#     assert list(batch_data['init_particle_weights'].shape) == [batch_size, num_particles]
-#     assert list(batch_data['floor_map'].shape) == [batch_size, map_size[0], map_size[1], map_size[2]]
-#     # assert list(batch_data['obstacle_map'].shape) == [batch_size, map_size[0], map_size[1], map_size[2]]
-#
-#     return batch_data
 
 
 def serialize_tf_record(episode_data):
@@ -723,10 +382,6 @@ def serialize_tf_record(episode_data):
     odometry = episode_data['odometry']
     scene_id = episode_data['scene_id']
     floor_num = episode_data['floor_num']
-    # floor_map = episode_data['floor_map']
-    # obstacle_map = episode_data['obstacle_map']
-    # init_particles = episode_data['init_particles']
-    # init_particle_weights = episode_data['init_particle_weights']
 
     record = {
         'state': tf.train.Feature(float_list=tf.train.FloatList(value=states.flatten())),
@@ -741,14 +396,6 @@ def serialize_tf_record(episode_data):
         'occupancy_grid_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=occupancy_grid.shape)),
         'scene_id': tf.train.Feature(bytes_list=tf.train.BytesList(value=[scene_id.encode('utf-8')])),
         'floor_num': tf.train.Feature(int64_list=tf.train.Int64List(value=[floor_num])),
-        # 'floor_map': tf.train.Feature(float_list=tf.train.FloatList(value=floor_map.flatten())),
-        # 'floor_map_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=floor_map.shape)),
-        # 'obstacle_map': tf.train.Feature(float_list=tf.train.FloatList(value=obstacle_map.flatten())),
-        # 'obstacle_map_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=obstacle_map.shape)),
-        # 'init_particles': tf.train.Feature(float_list=tf.train.FloatList(value=init_particles.flatten())),
-        # 'init_particles_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=init_particles.shape)),
-        # 'init_particle_weights': tf.train.Feature(float_list=tf.train.FloatList(value=init_particle_weights.flatten())),
-        # 'init_particle_weights_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=init_particle_weights.shape)),
     }
 
     return tf.train.Example(features=tf.train.Features(feature=record)).SerializeToString()
@@ -773,14 +420,6 @@ def deserialize_tf_record(raw_record):
         'occupancy_grid_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
         'scene_id': tf.io.FixedLenSequenceFeature((), dtype=tf.string, allow_missing=True),
         'floor_num': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
-        # 'floor_map': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
-        # 'floor_map_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
-        # 'obstacle_map': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
-        # 'obstacle_map_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
-        # 'init_particles': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
-        # 'init_particles_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
-        # 'init_particle_weights': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
-        # 'init_particle_weights_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
     }
 
     features_tensor = tf.io.parse_single_example(raw_record, tfrecord_format)
@@ -807,14 +446,6 @@ def deserialize_tf_record_igibson(raw_record):
         'occupancy_grid_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
         'scene_id': tf.io.FixedLenSequenceFeature((), dtype=tf.string, allow_missing=True),
         'floor_num': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
-        # 'floor_map': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
-        # 'floor_map_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
-        # 'obstacle_map': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
-        # 'obstacle_map_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
-        # 'init_particles': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
-        # 'init_particles_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
-        # 'init_particle_weights': tf.io.FixedLenSequenceFeature((), dtype=tf.float32, allow_missing=True),
-        # 'init_particle_weights_shape': tf.io.FixedLenSequenceFeature((), dtype=tf.int64, allow_missing=True),
     }
 
     features_tensor = tf.io.parse_single_example(raw_record, tfrecord_format)

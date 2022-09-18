@@ -53,38 +53,6 @@ def draw_floor_map(floor_map, map_shape, plt_ax, map_plt, cmap='gray'):
         map_plt.set_data(floor_map[:H, :W])
     return map_plt
 
-def draw_particles_pose(particles, weights, map_shape, particles_plt, scale=1):
-    """
-    Render the particle poses on the scene floor map
-    :param ndarray particles: estimates of particle pose
-    :param ndarray weights: corresponding weights of particle pose estimates
-    :param tuple map_shape: [height, width, channel] of the map the co-ordinated need to be transformed
-    :param matplotlib.collections.PathCollection: plot of particle position color coded according to weights
-    :param scale: integer rescaling value
-    :return matplotlib.collections.PathCollection: updated plot of particles
-    """
-
-    part_col, part_row, part_th = tf.unstack(particles, axis=-1, num=3)   # (k, 3)
-    # height, width, channel = map_shape
-
-    # HACK: display particles alpha proprtional to their weights
-    lin_weights = softmax(weights)
-    th = 0 # np.mean(lin_weights)
-    alphas = np.where(lin_weights >= th, 1, 0) * lin_weights
-    alphas = alphas/np.max(alphas)
-
-    rgba_colors = cm.rainbow(weights - np.min(weights))
-    rgba_colors[:, 3] = alphas
-
-    if particles_plt is None:
-        # render particles positions with color
-        particles_plt = plt.scatter(part_row, part_col, s=10, c=rgba_colors)
-    else:
-        # update existing particles positions and color
-        particles_plt.set_offsets(tf.stack([part_row, part_col], axis=-1))
-        particles_plt.set_color(rgba_colors)
-
-    return particles_plt
 
 def draw_robot_pose(robot_pose, color, map_shape, plt_ax, position_plt, heading_plt, plt_path=False, scale=1, alpha=0.7):
     """
