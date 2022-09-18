@@ -3,7 +3,7 @@
 from .envs.localize_env import LocalizeGibsonEnv
 
 
-def create_env(params, pfnet_model, do_wrap_env: bool = False):
+def create_env(params, pfnet_model):
     env = LocalizeGibsonEnv(
         config_file=params.config_file,
         scene_id=params.scene_id,
@@ -14,8 +14,4 @@ def create_env(params, pfnet_model, do_wrap_env: bool = False):
         pfnet_model=pfnet_model,
         pf_params=params,
     )
-
-    if do_wrap_env:
-        raise NotImplementedError()
-        
     return env

@@ -12,14 +12,9 @@ from igibson.envs.igibson_env import iGibsonEnv
 from igibson.utils.utils import l2_distance
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
-# from igibson.external.pybullet_tools.utils import plan_base_motion_2d
 from igibson.utils.utils import l2_distance, quatToXYZW, rotate_vector_2d, rotate_vector_3d
 from igibson.reward_functions.collision_reward import CollisionReward
-# from igibson.reward_functions.point_goal_reward import PointGoalReward
-# from igibson.reward_functions.potential_reward import PotentialReward
-# from igibson.termination_conditions.max_collision import MaxCollision
 from igibson.termination_conditions.out_of_bound import OutOfBound
-# from igibson.termination_conditions.point_goal import PointGoal
 from igibson.termination_conditions.timeout import Timeout
 
 from ..env_utils import datautils, render
@@ -28,12 +23,7 @@ from ..env_utils.datautils import ORIG_IGIBSON_MAP_RESOLUTION
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from pathlib import Path
 from pfnetwork import pfnet
-import pybullet as p
 import tensorflow as tf
-tf.get_logger().setLevel('ERROR')
-
-
-
 
 
 class LocalizeGibsonEnv(iGibsonEnv):
@@ -46,7 +36,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
             config_file,
             scene_id=None,
             mode='headless',
-            # use_tf_function=True,
             pfnet_model=None,
             action_timestep=1 / 10.0,
             physics_timestep=1 / 240.0,
@@ -56,12 +45,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
             pf_params=None,
     ):
         """
-        Perform required iGibsonEnv initialization.
-        In addition, override behaviour specific to localization task, which are:
-        1. appropriate task reward function and task termination conditions
-        2. initialize particle filter network
-        3. initialize custom observation specs to return on env.step() and env.reset()
-
         :param config_file: config_file path
         :param scene_id: override scene_id in config file
         :param mode: headless, gui, iggui
@@ -115,7 +98,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
 
         task_obs_dim = 7 + self.pf_params.observe_steps  # robot_prorpio_state (18)
         if 'task_obs' in self.pf_params.custom_output:
-            # HACK: use [-1k, +1k] range for TanhNormalProjectionNetwork to work
             observation_space['task_obs'] = gym.spaces.Box(
                 low=-1000.0, high=+1000.0,
                 shape=(task_obs_dim,),
@@ -233,7 +215,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
         self.curr_obs = None
         self.curr_gt_pose = None
         self.curr_est_pose = None
-        self.curr_cluster = None
 
     def load_miscellaneous_variables(self):
         """
@@ -282,10 +263,8 @@ class LocalizeGibsonEnv(iGibsonEnv):
             info['pred'] = loss_dict['pred'].cpu().numpy()
             info['coords'] = loss_dict['coords'].cpu().numpy()
             info['orient'] = loss_dict['orient'].cpu().numpy()
-            # info['angular'] = loss_dict['angular'].cpu().numpy()
 
             # include pfnet's estimate in environment's reward
-            # TODO: may need better reward ?
             if self.pf_params.reward == 'pred':
                 rescale = 1
                 reward -= tf.squeeze(loss_dict['pred']).cpu().numpy() / rescale
@@ -326,13 +305,9 @@ class LocalizeGibsonEnv(iGibsonEnv):
             self.fig.clear()
 
             num_subplots = 6
-            # for sensor in ['rgb_obs', 'depth_obs', 'occupancy_grid']:
-            #     if self.observation_space.get(sensor, None):
-            #         num_subplots += 1
 
             self.plt_ax = [self.fig.add_subplot(1, num_subplots, i + 1) for i in range(num_subplots)]
             [ax.set_axis_off() for ax in self.plt_ax]
-            # self.plt_ax[0].set_title('iGibson Apartment')
             self.env_plts = self._get_empty_env_plots()
 
         if self.scene_ids:
@@ -341,10 +316,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
                 curr_ep, curr_step = self.current_episode, self.current_step
                 self.reload_model(scene_id)
                 self.current_episode, self.current_step = curr_ep, curr_step
-            
-        # HACK: sample robot pose from selective area
-        # self.reset_agent()
-
         state = super(LocalizeGibsonEnv, self).reset()
 
         # process new env map
@@ -438,13 +409,10 @@ class LocalizeGibsonEnv(iGibsonEnv):
     def step_pfnet(self, new_state):
         """
         Perform one particle filter update step
-
         :param new_obs: latest observation from env.step()
-
         :return loss_dict: dictionary of total loss and coordinate loss (in meters)
         """
 
-        # trajlen = self.pf_params.trajlen
         batch_size = self.pf_params.batch_size
         num_particles = self.pf_params.num_particles
         obs_ch = self.pf_params.obs_ch
@@ -491,7 +459,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
             return x
         odometry = _add_batch_dim(odometry, add_traj_dim=True)
         observation = _add_batch_dim(observation, add_traj_dim=True)
-        # floor_map = _add_batch_dim(self.floor_map)
 
         old_pfnet_state = self.curr_pfnet_state
         trajlen = 1
@@ -615,7 +582,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
                     gt_pose = self.curr_gt_pose
                 if est_pose is None:
                     est_pose = np.squeeze(self.curr_est_pose) if (self.curr_est_pose is not None) else None
-                curr_cluster = self.curr_cluster
                 current_step = self.current_step
             else:
                 est_pose = np.squeeze(pfnet.PFCell.get_est_pose(particles=particles, particle_weights=particle_weights))
@@ -630,7 +596,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
 
             # ground truth robot pose and heading
             color = '#7B241C'
-            # gt_pose = self.curr_gt_pose
             position_plt = self.env_plts['robot_gt_plt']['position_plt']
             heading_plt = self.env_plts['robot_gt_plt']['heading_plt']
             position_plt, heading_plt = render.draw_robot_pose(
@@ -737,9 +702,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
                 plt.draw()
                 plt.pause(0.00000000001)
                 
-                f = self.fig
-
-                self.fig.show()
 
     def close(self):
         """

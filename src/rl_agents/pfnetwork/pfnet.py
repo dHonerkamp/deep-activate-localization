@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
-
-import argparse
-import time
-
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow import keras
-import cv2
 import pybullet as p
 
 try:
@@ -17,15 +12,7 @@ except:
     from architecture import networks
     from architecture.spatial_transformer import transformer
 
-from environments.env_utils.datautils import get_random_particles, get_random_points_map
-
-
-def cosine_similarity(a, b, dim=-1):
-    raise NotImplementedError("Untested, might still have bugs")
-    if isinstance(a, tf.Tensor):
-        return tf.inner(a, b, dim) / (tf.linalg.norm(a, dim) * tf.linalg.norm(b, dim))
-    else:
-        return np.inner(a, b, dim) / (np.linalg.norm(a, dim) * np.linalg.norm(b, dim))
+from environments.env_utils.datautils import get_random_particles
 
 
 def datautils_norm_angle(angle):
@@ -37,6 +24,7 @@ def datautils_norm_angle(angle):
     quaternion = p.getQuaternionFromEuler(np.array([0, 0, angle]))
     euler = p.getEulerFromQuaternion(quaternion)
     return euler[2]
+
 
 def norm_angle(angle):
     return tf.math.floormod(angle + np.pi, 2 * np.pi) - np.pi
@@ -62,9 +50,6 @@ class PFCell(keras.layers.AbstractRNNCell):
         self.map_shape = (self.params.batch_size, *self.params.global_map_size)
         super(PFCell, self).__init__(**kwargs)
 
-        # self.particle_weights = None
-        # self.particles = None
-
         self.is_igibson = is_igibson
 
         # models
@@ -74,13 +59,9 @@ class PFCell(keras.layers.AbstractRNNCell):
             self.joint_matrix_model = networks.map_obs_encoder()
             self.joint_vector_model = networks.likelihood_estimator()
         elif self.params.likelihood_model == 'scan_correlation':
-            pass
+            raise NotImplementedError()
         else:
             raise ValueError()
-
-    # def reset_supervised(self, initial_particles, initial_particle_weights):
-    #     self.particles = initial_particles
-    #     self.particle_weights = initial_particle_weights
 
     @staticmethod
     def reset(robot_pose_pixel, env, params):
@@ -110,27 +91,14 @@ class PFCell(keras.layers.AbstractRNNCell):
 
         :return dict: total loss and coordinate loss (in meters)
         """
-        # assert particle_states.ndim == 4 and particle_weights.ndim == 3 and true_states.ndim == 3
-        # TODO: what does this imply for scan-correlation likelihoods?
-        # lin_weights = tf.nn.softmax(self.particle_weights, axis=-1)
-        #
-        # true_coords = true_states[..., :2]
-        # mean_coords = tf.math.reduce_sum(tf.math.multiply(self.particles[..., :2], lin_weights[..., None]), axis=-2)
-
-
         est_pose = PFCell.get_est_pose(particles=particles, particle_weights=particle_weights)
-        # coords_diffs = mean_coords - true_coords
 
         pose_diffs = est_pose - true_states
 
-        # iGibsonEnv.scene.map_to_world()
         coords_diffs = pose_diffs[..., :2] * trav_map_resolution
         # coordinates loss component: (x-x')^2 + (y-y')^2
         loss_coords = tf.math.reduce_sum(tf.math.square(coords_diffs), axis=-1)
 
-        # TODO: the paper describes this loss, but their code uses the thing below
-        # orient_diffs = pose_diffs[..., 2]
-        # loss_orient = tf.math.square(tf.math.reduce_sum(orient_diffs, axis=2))
         orient_diffs = particles[..., 2] - true_states[..., 2][..., None]
         # normalize between [-pi, +pi]
         orient_diffs = tf.math.floormod(orient_diffs + np.pi, 2 * np.pi) - np.pi
@@ -139,13 +107,11 @@ class PFCell(keras.layers.AbstractRNNCell):
         loss_orient = tf.square(tf.reduce_sum(orient_diffs * lin_weights, axis=-1))
 
         loss_combined = loss_coords + 0.36 * loss_orient
-        # loss_pred = tf.math.reduce_mean(loss_combined)
 
         loss = {}
         loss['pred'] = loss_combined  # [batch_size, trajlen]
         loss['coords'] = loss_coords  # [batch_size, trajlen]
         loss['orient'] = loss_orient  # [batch_size, trajlen]
-        # loss['angular'] = tf.sqrt(tf.square(est_pose[..., 2] - norm_angle(true_states[..., 2])))
 
         return loss
 
@@ -181,24 +147,11 @@ class PFCell(keras.layers.AbstractRNNCell):
         """
         Compute estimate pose from particle and particle_weights (== weighted mean)
         """
-
-        # batch_size = self.pf_params.batch_size
-        # num_particles = self.pf_params.num_particles
-        # particles, particle_weights, _ = self.curr_pfnet_state  # after transition update
         lin_weights = tf.nn.softmax(particle_weights, axis=-1)
-
-        # assert list(particles.shape) == [batch_size, num_particles, 3], f'{particles.shape}'
-        # assert list(lin_weights.shape) == [batch_size, num_particles], f'{lin_weights.shape}'
-
         est_pose_xy = tf.math.reduce_sum(tf.math.multiply(particles[..., :2], lin_weights[..., None]), axis=-2)
-        # assert list(est_pose.shape) == [batch_size, 3], f'{est_pose.shape}'
 
         particle_theta_normed = norm_angle(particles[..., 2])
         est_pose_theta = tf.math.reduce_sum(tf.math.multiply(particle_theta_normed, lin_weights), axis=-1, keepdims=True)
-        # normalize between [-pi, +pi]
-        # part_x, part_y, part_th = tf.unstack(est_pose, axis=-1, num=3)  # (k, 3)
-        # part_th = tf.math.floormod(part_th + np.pi, 2 * np.pi) - np.pi
-        # est_pose = tf.stack([part_x, part_y, part_th], axis=-1)
 
         return tf.concat([est_pose_xy, est_pose_theta], axis=-1)
 
@@ -220,9 +173,6 @@ class PFCell(keras.layers.AbstractRNNCell):
         num_particles = particle_weights.shape[-1]
         likelihood_map_ext[:, :, 0] = np.squeeze(floor_map).copy() > 0  # clip to 0 or 1
 
-        # x, y = (np.clip(int(particles[..., 0]), likelihood_map_ext.shape[0] - 1),
-        #         np.clip(int(particles[..., 1]), likelihood_map_ext.shape[1] - 1))
-
         xy_clipped = np.clip(particles[..., :2], (0, 0), (likelihood_map_ext.shape[0] - 1, likelihood_map_ext.shape[1] - 1)).astype(int)
 
         for idx in range(num_particles):
@@ -230,29 +180,10 @@ class PFCell(keras.layers.AbstractRNNCell):
             orn = particles[idx, 2]
             orn = datautils_norm_angle(orn)
             wt = lin_weights[idx]
-            # x = np.clip(int(np.rint(col)), 0, likelihood_map_ext.shape[0] - 1)
-            # y = np.clip(int(np.rint(row)), 0, likelihood_map_ext.shape[1] - 1)
 
-            # update weights channel
-            # likelihood_map_ext[
-            #     int(np.rint(col-self.robot_size_px/2.)):int(np.rint(col+self.robot_size_px/2.))+1,
-            #     int(np.rint(row-self.robot_size_px/2.)):int(np.rint(row+self.robot_size_px/2.))+1, 1] += wt
             likelihood_map_ext[x, y, 1] += wt
-
-            # update orientation cos component channel
-            # likelihood_map_ext[
-            #     int(np.rint(col-self.robot_size_px/2.)):int(np.rint(col+self.robot_size_px/2.))+1,
-            #     int(np.rint(row-self.robot_size_px/2.)):int(np.rint(row+self.robot_size_px/2.))+1, 2] += wt*np.cos(orn)
             likelihood_map_ext[x, y, 2] += wt * np.cos(orn)
-            # update orientation sin component channel
-            # likelihood_map_ext[
-            #     int(np.rint(col-self.robot_size_px/2.)):int(np.rint(col+self.robot_size_px/2.))+1,
-            #     int(np.rint(row-self.robot_size_px/2.)):int(np.rint(row+self.robot_size_px/2.))+1, 3] += wt*np.sin(orn)
             likelihood_map_ext[x, y, 3] += wt * np.sin(orn)
-        # normalize: weighed mean of orientation channel w.r.t weights channel
-        # indices = likelihood_map_ext[:, :, 1] > 0.
-        # likelihood_map_ext[indices, 2] /= likelihood_map_ext[indices, 1]
-        # likelihood_map_ext[indices, 3] /= likelihood_map_ext[indices, 1]
 
         return likelihood_map_ext
 
@@ -295,12 +226,10 @@ class PFCell(keras.layers.AbstractRNNCell):
             particles = self.transition_model(particles, odometry)
 
         # observation update
-        # particle_weights, particles = self.particle_weights, self.particles
-
         if self.params.likelihood_model == 'learned':
             lik = self.observation_update(global_map, particles, observation)
         else:
-            lik = self.observation_update_scan_correlation(global_map=global_map, particle_states=particles, observation=observation)
+            raise NotImplementedError()
         particle_weights = particle_weights + lik  # unnormalized
 
         # resample
@@ -314,125 +243,9 @@ class PFCell(keras.layers.AbstractRNNCell):
         if not self.is_igibson:
             particles = self.transition_model(particles, odometry)
 
-        # construct new state after motion update
-        # state = [particle_states, particle_weights, global_map]
-        # print('output shapes:', [output[0].shape, output[1].shape])
-        # print('state shapes:', [state[0].shape, state[1].shape, state[2].shape])
-        # print('output types:', [output[0].dtype, output[1].dtype])
-        # print('state types:', [state[0].dtype, state[1].dtype, state[2].dtype])
-        #
-        # print("output nans:", [tf.print(tf.reduce_any(tf.math.is_nan(o))) for o in output])
-        # print("state nans:", [tf.print(tf.reduce_any(tf.math.is_nan(o))) for o in state])
-
-        # self.particle_weights = particle_weights
-        # self.particles = particles
-
         state = [particles, particle_weights, global_map]
-
         return output, state
 
-    def observation_update_scan_correlation(self, global_map, particle_states, observation):
-        """
-        :param observation: image observation (batch, 56, 56, ch)
-        """
-        return self.calc_scan_correlation(global_map=global_map, particle_states=particle_states, observation=observation, window_scaler=self.params.window_scaler, scan_size=128, is_igibson=self.is_igibson)
-
-    @staticmethod
-    def calc_scan_correlation(global_map, particle_states, observation, window_scaler, scan_size: float, is_igibson: bool):
-        # NOTE: occupancy_grid covers 5mx5m with 128x128pixels -> resolution 5/128 = 0.0390625
-        # global map is at resolution 0.1
-        # -> scale global map by 0.1/0.0390625 = 0.390625?
-        window_scaler = 0.390625
-        # TODO: this also needs to be done in the original pfnet update / respectively anywhere that calls PFCell.transform_maps()
-        # global_map = np.flip(global_map, axis=-3)
-
-        batch_size, num_particles = particle_states.shape.as_list()[:2]
-
-        # transform global maps to local maps
-        # in [0, 2] range?
-        local_maps = PFCell.transform_maps(global_map, particle_states, (scan_size, scan_size), window_scaler, agent_at_bottom=False, flip_map=is_igibson)
-
-        # flatten batch and particle dimensions
-        local_maps = tf.reshape(local_maps, [batch_size * num_particles, -1])
-
-        # observation: 0: occupied, 0.5: unexplored, 1.0: free
-        # -> reformat to 0: free, 1: occupied, 2: unexplored
-        grid = tf.zeros(observation.shape, dtype=tf.int32)
-        o = tf.cast(2 * observation, tf.int32)
-        grid += tf.where(o == 1, 2, 0)
-        grid += tf.where(o == 0, 1, 0)
-
-        # NOTE: orientation on occupancy grid is originally to the right. Change to be looking upwards as in the local_maps
-        grid = tf.image.rot90(grid, 1)
-
-
-
-
-        def _compare_grids(gt_pose=(55.   , 47.   ,  3.068), rotate_grid=0, flip=False):
-            ps = tf.concat([tf.convert_to_tensor(list(gt_pose), dtype=tf.float32)[None, None],
-                            particle_states[:, 1:]], 1)
-            local_maps = PFCell.transform_maps(global_map, ps, (scan_size, scan_size), window_scaler, agent_at_bottom=False, flip_map=self.is_igibson)
-            # flatten batch and particle dimensions
-            local_maps = tf.reshape(local_maps, [batch_size * num_particles, -1])
-
-            from matplotlib import pyplot as plt
-            import cv2
-            f, ax = plt.subplots(1, 3)
-            g = grid[0]
-            g = np.rot90(g, rotate_grid)
-            l = np.reshape(local_maps[0], (128, 128))
-            if flip:
-                l = np.fliplr(l)
-            ax[0].imshow(cv2.cvtColor((g * 255 / 2).astype(np.uint8), cv2.COLOR_GRAY2BGR))
-            ax[1].imshow(l)
-            for i, c in enumerate(['g', 'w', 'w']):
-                ax[i].set_xticks(np.arange(0, 128, 32))
-                ax[i].set_yticks(np.arange(0, 128, 32))
-                ax[i].grid(color=c, linestyle='-', linewidth=1)
-
-            ax[2].imshow(np.squeeze(np.array(g == 1, dtype=int)) - np.array(l > 0, dtype=int))
-            plt.show()
-
-        def _plot_global_map():
-            from matplotlib import pyplot as plt
-            plt.imshow(global_map[0]);
-            ax = plt.gca();
-            ax.set_xticks(np.arange(0, 100, 10))
-            ax.set_yticks(np.arange(0, 100, 10))
-            plt.grid(color='w', linestyle='-', linewidth=1), plt.show()
-
-        # _compare_grids((59., 60., -0.304), flip=False)
-
-        # with tf.print(tf.unique(tf.reshape(grid, -1))):
-        grid_tiled = tf.tile(tf.expand_dims(grid, axis=1), [1, num_particles, 1, 1, 1])
-        grid_tiled = tf.reshape(grid_tiled, [batch_size * num_particles, -1])
-
-        # NOTE: will only work if not downsampled!
-        # mask out the unexplored parts of the observation
-        tf.assert_equal(batch_size, 1,
-                        "boolean_mask won't work easily with batches as it should mask a different number of elements per batch")
-        explored = (grid != 2)
-        mask = tf.reshape(explored, [scan_size ** 2])
-        local_maps_explored = tf.boolean_mask(local_maps, mask, axis=1)
-        grid_tiled_explored = tf.boolean_mask(grid_tiled, mask, axis=1)
-
-        correlation = tfp.stats.correlation(local_maps_explored, tf.cast(grid_tiled_explored, tf.float32),
-                                            sample_axis=-1, event_axis=None)
-        # if std of either masked part is 0, we get nan values -> set to lowest value, i.e. -1
-        correlation = tf.where(tf.math.is_nan(correlation), -1, correlation)
-        
-        # correlation = cosine_similarity(local_maps_explored, tf.cast(grid_tiled_explored, tf.float32))
-
-        lik = tf.reshape(correlation, [batch_size, num_particles])
-        # ensure all positive
-        lik -= tf.minimum(0.0, tf.reduce_min(lik, -1))
-        lik = lik / tf.reduce_sum(lik, axis=-1)
-
-        # TODO: should be unnormalized / in log space
-        log_lik = tf.math.log(lik)
-        log_lik = tf.where(tf.math.is_inf(log_lik), -7, log_lik)
-
-        return log_lik
 
     @tf.function(jit_compile=True)
     def observation_update(self, global_map, particle_states, observation):
@@ -680,38 +493,17 @@ class PFCell(keras.layers.AbstractRNNCell):
             ], axis=1)
             # print(f"zzzzzzzzzzzzzzz {(time.time() - t) / 60:.3f}")
 
-
-
         # reshape if any information has lost in spatial transform network
         local_maps = tf.reshape(local_maps, [batch_size, num_particles, local_map_size[0], local_map_size[1], global_map.shape.as_list()[-1]])
-
 
         # NOTE: flip to have the same alignment as the other modalities
         if flip_map:
             local_maps = tf.experimental.numpy.flip(local_maps, -2)
 
-        # particle_states = tf.convert_to_tensor([[65.   , 59.   ,  1.538]])[None]
-        # def _plot():
-        #     import matplotlib.pyplot as plt
-        #     b = 0
-        #     f, ax = plt.subplots(1, 1)
-        #     fmap, ax_map = plt.subplots(1, 1)
-        #     ax_map.imshow(global_map[b])
-        #     for i, a in enumerate(np.reshape(ax, -1)):
-        #         ax_map.scatter(particle_states[b, i, 1], particle_states[b, i, 0], marker='o', s=1)
-        #         a.imshow(local_maps[b, i])
-        #     plt.show()
-
-
         return local_maps   # (batch_size, num_particles, 28, 28, 1)
 
 
 def pfnet_model(params, is_igibson: bool):
-
-    # batch_size = params.batch_size
-    # num_particles = params.num_particles
-    # global_map_size = params.global_map_size
-    # trajlen = params.trajlen
     if hasattr(params, 'obs_ch'):
         obs_ch = params.obs_ch
     else:
@@ -735,86 +527,10 @@ def pfnet_model(params, is_igibson: bool):
     state = [particle_states, particle_weights, global_map]
     input = (observation, odometry)
     
-    # x = rnn(inputs=tuple([tf.random.uniform(i.shape) for i in input]), 
-    #         initial_state=tuple([tf.random.uniform(i.shape) for i in state]))
     x = rnn(inputs=input, initial_state=state)
     output, out_state = x[:2], x[2:]
-    # output = [keras.Input(o.shape[1:], batch_size=params.batch_size) for o in output]
-    # out_state = [keras.Input(o.shape[1:], batch_size=params.batch_size) for o in out_state]
 
     return keras.Model(
         inputs=([observation, odometry], state),
         outputs=([output, out_state])
     )
-    # return cell
-
-if __name__ == '__main__':
-    # obs_model = observation_model()
-    # keras.utils.plot_model(obs_model, to_file='obs_model.png', show_shapes=True, dpi=64)
-    #
-    # observations = np.random.random((8*10, 56, 56, 3))
-    # obs_out = obs_model(observations)
-    # print(obs_out.shape)
-    #
-    # map_model = map_model()
-    # keras.utils.plot_model(map_model, to_file='map_model.png', show_shapes=True, dpi=64)
-    #
-    # local_maps = np.random.random((8*10, 28, 28, 1))
-    # map_out = map_model(local_maps)
-    # print(map_out.shape)
-    #
-    # joint_matrix_model = joint_matrix_model()
-    # keras.utils.plot_model(joint_matrix_model, to_file='joint_matrix_model.png', show_shapes=True, dpi=64)
-    #
-    # joint_features = tf.concat([map_out, obs_out], axis=-1)
-    # joint_matrix_out = joint_matrix_model(joint_features)
-    # print(joint_matrix_out.shape)
-    #
-    # joint_vector_model = joint_vector_model()
-    # keras.utils.plot_model(joint_vector_model, to_file='joint_vector_model.png', show_shapes=True, dpi=64)
-    #
-    # joint_matrix_out = tf.reshape(joint_matrix_out, (8 * 10, -1))
-    # joint_vector_out = joint_vector_model(joint_matrix_out)
-    # joint_vector_out = tf.reshape(joint_vector_out, [8, 10])
-    # print(joint_vector_out.shape)
-    #
-    # particle_states = tf.random.uniform((8, 10, 3))
-    # odometry = tf.random.uniform((8, 3))
-    # transition_std = np.array([0.0, 0.0])
-    # map_pixel_in_meters = 0.02
-    # transition_out = transition_model(particle_states, odometry, (8, 10), transition_std, map_pixel_in_meters)
-    # print(transition_out.shape)
-    #
-    # global_maps = tf.random.uniform((8, 300, 300, 1))
-    # transform_out = transform_maps(global_maps, particle_states, (8, 10), (28, 28))
-    # print(transform_out.shape)
-
-    argparser = argparse.ArgumentParser()
-    params = argparser.parse_args()
-
-    params.transition_std = np.array([0.0, 0.0])
-    params.map_pixel_in_meters = 0.02
-    params.batch_size = 8
-    params.num_particles = 30
-    params.time_steps = 5
-
-    model = pfnet_model(params)
-    keras.utils.plot_model(model, to_file='pfnet_model.png', show_shapes=True, dpi=64)
-
-    particle_states = tf.random.uniform((params.batch_size, params.num_particles, 3))
-    particle_weights = tf.random.uniform((params.batch_size, params.num_particles))
-    observation = tf.random.uniform((params.batch_size, params.time_steps, 56, 56, 3))
-    odometry = tf.random.uniform((params.batch_size, params.time_steps, 3))
-    global_map = tf.random.uniform((params.batch_size, params.time_steps, 100, 100, 1))
-    inputs = ([observation, odometry, global_map], [particle_states, particle_weights])
-    output, state = model(inputs)
-    print(output[0].shape, output[1].shape, state[0].shape, state[1].shape)
-
-    # Save the weights
-    model.save_weights('./checkpoints/my_checkpoint')
-
-    # Create a new model instance
-    new_model = pfnet_model(params)
-
-    # Restore the weights
-    new_model.load_weights('./checkpoints/my_checkpoint')

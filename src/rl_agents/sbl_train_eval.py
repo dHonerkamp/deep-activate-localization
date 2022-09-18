@@ -4,14 +4,10 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-from distutils.log import log
 from multiprocessing.sharedctypes import Value
 
 import os
-import time
-import copy
 
-# from absl import app
 from absl import flags
 from absl import logging
 from pathlib import Path
@@ -29,22 +25,14 @@ from stable_baselines3.common.callbacks import CallbackList
 from pfnetwork.arguments import parse_common_args
 from pfnetwork.train import WANDB_PROJECT, init_pfnet_model
 from environments import suite_gibson
-from custom_agents.stable_baselines_utils import CustomCombinedExtractor2, CustomCombinedExtractor3, MyWandbCallback, get_run_name, get_logdir, MetricsCallback
+from custom_agents.stable_baselines_utils import CustomCombinedExtractor3, MyWandbCallback, get_run_name, get_logdir, MetricsCallback
 from supervised_data import get_scene_ids
-
-flags.DEFINE_string('root_dir', os.getenv('TEST_UNDECLARED_OUTPUTS_DIR'), 'Root directory for writing logs/summaries/checkpoints.')
-flags.DEFINE_integer('num_particles', 500, 'Number of particles in Particle Filter.')
-flags.DEFINE_boolean('resample', True, 'Resample particles in Particle Filter. Possible values: true / false.')
-flags.DEFINE_float('alpha_resample_ratio', 0.5, 'Trade-off parameter for soft-resampling in PF-net. Only effective if resample == true. Assumes values 0.0 < alpha <= 1.0. Alpha equal to 1.0 corresponds to hard-resampling.')
-flags.DEFINE_list('transition_std', [0.02, 0.0872665], 'Standard deviations for transition model. Values: translation std (meters), rotation std (radians)')
-FLAGS = flags.FLAGS
-
 
 
 def make_sbl_env(rank, seed, params):    
     def _init():
         pfnet_model = init_pfnet_model(params, is_igibson=True)
-        env = suite_gibson.create_env(params, pfnet_model=pfnet_model, do_wrap_env=False)
+        env = suite_gibson.create_env(params, pfnet_model=pfnet_model)
         
         env = Monitor(env)
         
@@ -57,10 +45,8 @@ def make_sbl_env(rank, seed, params):
 
 def main(params, test_scenes=None):
     tf.compat.v1.enable_v2_behavior()
-    # tf.debugging.enable_check_numerics()    # error out inf or NaN
     logging.set_verbosity(logging.INFO)
 
-    # conv_1d_layer_params = [(32, 8, 4), (64, 4, 2), (64, 3, 1)]
     if params.rl_architecture == 1:
         conv_2d_layer_params = [(32, (8, 8), 4), (64, (4, 4), 2), (64, (3, 3), 2)]
         encoder_fc_layers = [512, 512]
@@ -76,21 +62,11 @@ def main(params, test_scenes=None):
     else:
         raise Value(params.rl_architecture)
 
-    # critic_obs_fc_layers = [512, 512]
-    # critic_action_fc_layers = [512, 512]
-    # critic_joint_fc_layers = [512, 512]
-
     if params.num_parallel_environments > 1:
         env = SubprocVecEnv([make_sbl_env(rank=i, seed=params.seed, params=params) for i in range(params.num_parallel_environments)])
     else:
         env = make_sbl_env(rank=0, seed=params.seed, params=params)()
     
-    # if test_scenes:
-    #     eval_params = copy.deepcopy(params)
-    #     eval_params.scene_id = test_scenes
-    #     eval_env = make_sbl_env(rank=0, seed=eval_params.seed, params=eval_params)()
-    # else:
-    #     eval_env = None
     eval_env = None
 
     features_extractor_kwargs = dict(conv_2d_layer_params=conv_2d_layer_params,
@@ -124,8 +100,6 @@ def main(params, test_scenes=None):
                     eval_env=eval_env)
         model.save("sac_rl_agent")
         
-        
-    # mean_reward, std_reward = evaluate_policy(model, eval_env, n_eval_episodes=10)
 
 
 if __name__ == '__main__':

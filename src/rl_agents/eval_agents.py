@@ -4,11 +4,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-# import os
-# import time
-
-# from absl import flags
-# from absl import logging
 from pathlib import Path
 import tensorflow as tf
 import numpy as np
@@ -46,8 +41,6 @@ def evaluate(params, distribution, std_deviation, num_particles, particles_range
     if (not params.resume_id) and ("obstacle_obs" not in params.custom_output):
         params.custom_output.append("obstacle_obs")
         
-    # if params.scene_id == 'all':
-    # TODO: evaluate on test scenes?
     train_scenes, test_scenes = get_scene_ids(params.global_map_size)
     assert len(train_scenes), (params.global_map_size, train_scenes)
     assert len(test_scenes), (params.global_map_size, test_scenes)
@@ -58,13 +51,6 @@ def evaluate(params, distribution, std_deviation, num_particles, particles_range
         
     env = make_sbl_env(rank=0, seed=params.seed, params=params)()
     
-    
-    
-    # if params.num_parallel_environments > 1:
-    #     env = SubprocVecEnv([make_sbl_env(rank=i, seed=params.seed, params=Namespace(**params)) for i in range(params.num_parallel_environments)])
-    # else:
-    #     env = make_sbl_env(rank=0, seed=params.seed, params=params)()
-    #     env = DummyVecEnv(env)
     
     if params.agent == 'rl':
         model_file = wandb.restore(params.resume_model_name if params.resume_model_name else "model.zip")
@@ -103,20 +89,6 @@ def evaluate(params, distribution, std_deviation, num_particles, particles_range
             obs, reward, done, info = env.step(action)
             test_loss_dicts.append(info)
             if (i < 15) and (params.use_plot or params.store_plot):
-                # env.render('human', info=info, observation=obs)
-                
-                # TODO: also needs to have set/loaded the same scene
-                # hr_env.robots[0].set_position_orientation(env.robots[0].robot_body.get_position(), env.robots[0].robot_body.get_orientation())
-                # hr_state = hr_env.get_state()
-                # hr_obs = hr_env.process_state(hr_state)
-                # env.render('human', info=info, observation=obs)
-                
-                # from matplotlib import pyplot as plt
-                # f, ax = plt.subplots(1, 1)
-                # # ax.imshow(self.eps_obs['depth'][-1])
-                # ax.imshow(hr_state['depth'])
-                # f.savefig('test2.png')
-                
                 traj.add(observation=obs, 
                          gt_pose=env.curr_gt_pose, 
                          est_pose=env.curr_est_pose, 
@@ -149,7 +121,7 @@ def evaluate(params, distribution, std_deviation, num_particles, particles_range
         hr_params.custom_output.remove('likelihood_map')
         hr_params['high_res'] = True
         # hr_env = make_sbl_env(rank=0, seed=hr_params.seed, params=hr_params)()
-        hr_env = suite_gibson.create_env(hr_params, pfnet_model=None, do_wrap_env=False)
+        hr_env = suite_gibson.create_env(hr_params, pfnet_model=None)
         hr_env.scene_ids = []
 
         hr_env.reset()
@@ -193,8 +165,6 @@ def main(params):
     
 
 if __name__ == '__main__':
-    # tf.compat.v1.enable_v2_behavior()
-
     params = parse_common_args('igibson', add_rl_args=True)
 
     common_args = dict(project=WANDB_PROJECT, 
@@ -236,7 +206,6 @@ if __name__ == '__main__':
     
     main(params)
     
-    # wandb.gym.monitor()
 
 # nohup python -u eval_agents.py --device_idx 3 --agent avoid_agent --trajlen 50 --custom_output "rgb_obs" "depth_obs" "likelihood_map" "obstacle_obs" "task_obs" --eval_only --use_plot --store_plot --num_eval_episodes 50 --scene_id all --global_map_size 1000 1000 1 --pfnet_loadpath "/home/honerkam/repos/deep-activate-localization/src/rl_agents/logs/pfnet_below1000_lidar030/train_navagent_below1000/chks/checkpoint_95_0.157/pfnet_checkpoint" --obs_mode occupancy_grid > nohup_eval.out &
 # ON MY DESKTOP

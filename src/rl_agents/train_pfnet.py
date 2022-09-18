@@ -15,12 +15,9 @@ from pathlib import Path
 from pprint import pprint
 import copy
 
-from pfnetwork import pfnet
-from environments.env_utils import datautils, render
-from environments.envs.localize_env import LocalizeGibsonEnv
-from pfnetwork.train import train_step, eval_step, prepare_data, WANDB_PROJECT, stack_loss_dicts, calc_metrics, vis_output, init_pfnet_model
+from environments.env_utils import datautils
+from pfnetwork.train import train_step, eval_step, WANDB_PROJECT, stack_loss_dicts, calc_metrics, vis_output, init_pfnet_model
 from pfnetwork.arguments import parse_common_args, particle_std_to_covariance
-from environments.suite_gibson import create_env
 from custom_agents.stable_baselines_utils import DotDict
 
 np.set_printoptions(suppress=True)
