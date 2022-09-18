@@ -143,6 +143,8 @@ def evaluate(params, distribution, std_deviation, num_particles, particles_range
     env.close()
     # NOTE: just to have high-res images for the paper
     if (params.use_plot or params.store_plot):
+        if isinstance(params, Namespace):
+            params = vars(params)
         hr_params = DotDict(copy.deepcopy(dict(params)))
         hr_params.custom_output.remove('likelihood_map')
         hr_params['high_res'] = True

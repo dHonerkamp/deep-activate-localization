@@ -75,7 +75,8 @@ def get_scene_sizes():
     from PIL import Image
     import matplotlib.pyplot as plt
     # d = Path('/home/honerkam/repos/iGibson/igibson/data/g_dataset/')
-    d = Path('/home/honerkam/repos/iGibson/igibson/data/data_100scenes/')
+    # parent folder of this repository as the data is in the iGibson repo
+    d = Path(__file__).parent.parent.parent.parent / "iGibson/igibson/data/data_100scenes/"
     scene_paths = d.iterdir()
     sizes, scene_ids = [], []
     for scene_path in scene_paths:
@@ -141,22 +142,6 @@ def collect_all_scenes(params):
                            chunksize=1)
                 
     print("done", out)
-    
-    # processes = []
-    # for i, scene in enumerate(train_scenes + test_scenes):
-    #     if scene in train_scenes:
-    #         dir = 
-    #     else:
-    #         dir =
-        
-    #     p = multiprocessing.Process(target=collect_scene, args=(params, scene))
-    #     p.start()
-    #     processes.append(p)
-    #     if len(processes) >= max_processes:
-    #         while True:
-    #             for process in processes:
-                    
-    
     
     
 def main():
