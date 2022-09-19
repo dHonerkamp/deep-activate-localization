@@ -1,6 +1,6 @@
-# deep-activate-localization
+# Active Particle Filter Networks
 
-Repository providing the source code for the paper "N2M2: Learning Navigation for Arbitrary Mobile Manipulation Motions in Unseen and Dynamic Environments", see the [project website](http://apfn.cs.uni-freiburg.de).
+Repository providing the source code for the paper "Active Particle Filter Networks: Efficient Active Localization in Continuous Action Spaces and Large Maps", see the [project website](http://apfn.cs.uni-freiburg.de).
 Please cite the paper as follows:
 
 TODO
