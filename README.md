@@ -11,7 +11,7 @@ TODO
     year={2022},
 } -->
 
-The PF-net modules in this repository is based on https://github.com/AdaCompNUS/pfnet.
+The PF-net modules in this repository is based on https://github.com/AdaCompNUS/pfnet and implemented in tensorflow. The RL agents are implemented in pytorch based on stable-baselines3.
 
 ## Installation
 
@@ -79,30 +79,34 @@ The PF-net modules in this repository is based on https://github.com/AdaCompNUS/
 [//]: # (   ```)
 6. Test tensorflow installation is successful
    ```
-      python
-      >>> import tensorflow as tf
-      >>> tf.config.list_logical_devices()
-
       python3 -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
 
    ```
-if it doesn't work:
-```
-pip install --upgrade pip
-pip uninstall tensorflow
-pip install tensorflow==2.6.0
-```
+   if it doesn't detect the gpu, try:
+   ```
+   pip install --upgrade pip
+   pip uninstall tensorflow
+   pip install tensorflow==2.6.0
+   pip install numpy==1.21.1
+   ```
+7. Test if pytorch detects the GPU:
+   ```
+   import torch
+   torch.cuda.is_available()
+   torch.Tensor([0]).to('cuda')
+   ```
 
 ## Run
+Please activate the conda environment and start the following commands from `src/rl_agents`.
 
 Supervised data collection:
 ```
-python -u supervised_data.py --device_idx 2 --agent goalnav_agent --num_records 1000 --custom_output rgb_obs depth_obs occupancy_grid   task_obs obstacle_obs --global_map_size 1000 1000 1
+python -u supervised_data.py --device_idx 0 --agent goalnav_agent --num_records 1000 --custom_output rgb_obs depth_obs occupancy_grid task_obs obstacle_obs --global_map_size 1000 1000 1
 ```
 
 Pretrain PF-net:
 ```
-python -u train_pfnet.py --root_dir=logs/pfnet_below1000_lidar --tfrecordpath=/data/honerkam/pfnet_data/ --epochs=100 --obs_mode=occupancy_grid --num_train_samples=4000 --num_eval_samples=500 --batch_size=8 --pfnet_loadpath='' --learning_rate=5e-5 --init_particles_distr=gaussian --init_particles_std '0.3' '0.523599' --particles_range=100 --num_particles=30 --transition_std '0.' '0.' --resample=false --alpha_resample_ratio=0.5 --global_map_size 1000 1000 1--device_idx=0 --seed=42
+python -u train_pfnet.py --device_idx=0 --root_dir=logs/pfnet_below1000_lidar --tfrecordpath=/data/honerkam/pfnet_data/ --epochs=100 --obs_mode=occupancy_grid --num_train_samples=4000 --num_eval_samples=500 --batch_size=8 --pfnet_loadpath='' --learning_rate=5e-5 --init_particles_distr=gaussian --init_particles_std '0.3' '0.523599' --particles_range=100 --num_particles=30 --transition_std '0.' '0.' --resample=false --alpha_resample_ratio=0.5 --global_map_size 1000 1000 1 --seed=42
 ```
 
 Train RL agent:
@@ -112,5 +116,5 @@ python -u sbl_train_eval.py --device_idx 0 --scene_id all --num_parallel_environ
 
 Eval RL agent:
 ```
-python -u  eval_agents.py --device_idx 0 --custom_output rgb_obs depth_obs likelihood_map obstacle_obs occupancy_grid --obs_mode occupancy_grid --pfnet_loadpath /home/honerkam/repos/deep-activate-localization/src/rl_agents/logs/pfnet_below1000_lidar030/train_navagent_below1000/chks/checkpoint_95_0.157/pfnet_checkpoint --agent goalnav_agent --resume_id zev67g1g --eval_only --use_plot --store_plot --num_eval_episodes 50 --scene_id all --global_map_size 1000 1000 1
+python -u  eval_agents.py --device_idx 0 --custom_output rgb_obs depth_obs likelihood_map obstacle_obs occupancy_grid --obs_mode occupancy_grid --pfnet_loadpath /home/honerkam/repos/deep-activate-localization/src/rl_agents/logs/pfnet_below1000_lidar030/train_navagent_below1000/chks/checkpoint_95_0.157/pfnet_checkpoint --agent goalnav_agent --eval_only --use_plot --store_plot --num_eval_episodes 50 --scene_id all --global_map_size 1000 1000 1 --resume_id [enter wandb run id]
 ```

@@ -9,7 +9,7 @@ import os
 import wandb
 from pathlib import Path
 
-from .environments.envs.localize_env import LocalizeGibsonEnv
+from environments.envs.localize_env import LocalizeGibsonEnv
 
 
 def create_env(params, pfnet_model):

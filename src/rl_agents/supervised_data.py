@@ -3,10 +3,8 @@
 # from absl import app
 # from absl import flags
 from absl import logging
-import argparse
 import numpy as np
 import os
-import random
 import tensorflow as tf
 from tqdm import tqdm
 from pathlib import Path

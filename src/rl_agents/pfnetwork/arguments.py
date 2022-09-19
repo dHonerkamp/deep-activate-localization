@@ -104,7 +104,7 @@ def parse_common_args(env_name: str, collect_data: bool = False, add_rl_args: bo
     elif env_name == 'igibson':
         argparser.add_argument('--tfrecordpath', type=str, default='/data/honerkam/pfnet_data/', help='Folder path to training/evaluation/testing (tfrecord).')
         argparser.add_argument('--root_dir', type=str, default='./train_output', help='Root directory for logs/summaries/checkpoints.')
-        argparser.add_argument('--custom_output', nargs='*', default=['rgb_obs', 'depth_obs', 'occupancy_grid', 'floor_map', 'likelihood_map', 'obstacle_obs'], choices=['rgb_obs', 'depth_obs', 'occupancy_grid', 'floor_map', 'likelihood_map', 'obstacle_obs', 'task_obs'], help='A comma-separated list of env observation types.)
+        argparser.add_argument('--custom_output', nargs='*', default=['rgb_obs', 'depth_obs', 'occupancy_grid', 'floor_map', 'likelihood_map', 'obstacle_obs'], choices=['rgb_obs', 'depth_obs', 'occupancy_grid', 'floor_map', 'likelihood_map', 'obstacle_obs', 'task_obs'], help='A comma-separated list of env observation types.')
         argparser.add_argument('--config_file', type=str, default=str(Path(__file__).parent.parent / 'configs' / 'locobot_pfnet_nav.yaml'), help='Config file for the experiment')
         argparser.add_argument('--scene_id', type=str, default='Rs', help='Environment scene')
         argparser.add_argument('--action_timestep', type=float, default=1.0 / 10.0, help='Action time step for the simulator')

@@ -19,11 +19,10 @@ from argparse import Namespace
 from pfnetwork.arguments import parse_common_args, particle_std_to_covariance
 from pfnetwork.train import WANDB_PROJECT, stack_loss_dicts, calc_metrics
 from sbl_train_eval import make_sbl_env
-from custom_agents.stable_baselines_utils import DotDict
+from custom_agents.stable_baselines_utils import DotDict, create_env
 from environments.env_utils import datautils
 from custom_agents.stable_baselines_utils import get_run_name, get_logdir
 from supervised_data import get_scene_ids
-from environments import suite_gibson
 from render_paper import Trajectory
 from pfnetwork import pfnet
 
@@ -121,7 +120,7 @@ def evaluate(params, distribution, std_deviation, num_particles, particles_range
         hr_params.custom_output.remove('likelihood_map')
         hr_params['high_res'] = True
         # hr_env = make_sbl_env(rank=0, seed=hr_params.seed, params=hr_params)()
-        hr_env = suite_gibson.create_env(hr_params, pfnet_model=None)
+        hr_env = create_env(hr_params, pfnet_model=None)
         hr_env.scene_ids = []
 
         hr_env.reset()
