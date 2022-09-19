@@ -24,15 +24,14 @@ from stable_baselines3.common.callbacks import CallbackList
 
 from pfnetwork.arguments import parse_common_args
 from pfnetwork.train import WANDB_PROJECT, init_pfnet_model
-from environments import suite_gibson
-from custom_agents.stable_baselines_utils import CustomCombinedExtractor3, MyWandbCallback, get_run_name, get_logdir, MetricsCallback
+from custom_agents.stable_baselines_utils import create_env, CustomCombinedExtractor3, MyWandbCallback, get_run_name, get_logdir, MetricsCallback
 from supervised_data import get_scene_ids
 
 
 def make_sbl_env(rank, seed, params):    
     def _init():
         pfnet_model = init_pfnet_model(params, is_igibson=True)
-        env = suite_gibson.create_env(params, pfnet_model=pfnet_model)
+        env = create_env(params, pfnet_model=pfnet_model)
         
         env = Monitor(env)
         

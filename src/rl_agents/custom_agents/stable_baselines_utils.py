@@ -1,9 +1,6 @@
 import numpy as np
-# from stable_baselines3.common.utils import set_random_seed
-# from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.callbacks import BaseCallback
-
 from torch import nn
 import torch
 import gym
@@ -11,6 +8,22 @@ from wandb.integration.sb3 import WandbCallback
 import os
 import wandb
 from pathlib import Path
+
+from .environments.envs.localize_env import LocalizeGibsonEnv
+
+
+def create_env(params, pfnet_model):
+    env = LocalizeGibsonEnv(
+        config_file=params.config_file,
+        scene_id=params.scene_id,
+        mode=params.env_mode,
+        action_timestep=params.action_timestep,
+        physics_timestep=params.physics_timestep,
+        device_idx=params.device_idx,
+        pfnet_model=pfnet_model,
+        pf_params=params,
+    )
+    return env
 
 
 def out_sz(in_size, k=3, pad=0, stride=1):

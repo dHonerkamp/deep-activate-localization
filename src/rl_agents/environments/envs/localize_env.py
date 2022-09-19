@@ -18,7 +18,6 @@ from igibson.termination_conditions.out_of_bound import OutOfBound
 from igibson.termination_conditions.timeout import Timeout
 
 from ..env_utils import datautils, render
-from ..env_utils.datautils import ORIG_IGIBSON_MAP_RESOLUTION
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 from pathlib import Path
@@ -565,7 +564,7 @@ class LocalizeGibsonEnv(iGibsonEnv):
         render.draw_robot_pose(pose, '#7B241C', floor_map.shape, ax, None, None, plt_path=True)
         return f, ax
 
-    def render(self, mode='human', particles=None, particle_weights=None, floor_map=None, observation=None, gt_pose=None, current_step=None, curr_cluster=None, est_pose=None, info=None):
+    def render(self, mode='human', particles=None, particle_weights=None, floor_map=None, observation=None, gt_pose=None, current_step=None, est_pose=None, info=None):
         """
         Render plots
         """
