@@ -183,7 +183,7 @@ if __name__ == '__main__':
                 wandb_params[p] = params.__getattribute__(p)
                 
         # always override certain values
-        for p in ['num_parallel_environments', 'num_eval_episodes', "resume_model_name", 'resume_id', 'action_timestep', 'loop']:
+        for p in ['num_parallel_environments', 'num_eval_episodes', "resume_model_name", 'resume_id', 'action_timestep', 'loop', 'env_mode']:
             wandb_params[p] = params.__getattribute__(p)
         
         # backwards compatibility for new keys

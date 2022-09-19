@@ -5,21 +5,6 @@
 * Nvidia-Driver Version: 460.73.01
 * CUDA Version: 11.2
 
-#### Wiki Page:
-For more details to train/test particle filter or rl agent [refer](https://github.com/suresh-guttikonda/deep-activate-localization/wiki).
-
-#### Installation:
-- Option1 : Installation from source [refer](https://github.com/suresh-guttikonda/deep-activate-localization#steps-to-setup-project)
-- Option2 : Installation from singularity image [refer](https://github.com/suresh-guttikonda/deep-activate-localization#steps-to-create-singularity-image-to-setup-project) Note: modifying locobot urdf can be tricky in this case.
-
-#### Useful References:
-- Install Cuda Without Root [link](https://stackoverflow.com/questions/39379792/install-cuda-without-root)
-   ```
-      sh cuda_10.1.105_418.39_linux.run --silent --toolkit --toolkitpath=$HOME/tkit
-   ```
-- Install Cudnn in Ubuntu [link](https://askubuntu.com/questions/1230645/when-is-cuda-gonna-be-released-for-ubuntu-20-04)
-
-
 #### Steps to setup project:
 0. Install required Nvidia Driver + CUDA + CUDNN for the system. Also refer igibson documentation for system requirements [link](http://svl.stanford.edu/igibson/docs/installation.html).
 1. Install virtual environment/package management platform like anaconda/[miniconda](https://docs.conda.io/en/latest/miniconda.html) or python virtualenv. Following assumes anaconda is installed.
@@ -101,13 +86,6 @@ pip uninstall tensorflow
 pip install tensorflow==2.6.0
 ```
 
-9. Install TF Agents (forked repository)
-   ```
-      <root_folder>/iGibson$ cd ..
-      <root_folder>$ git clone --branch cvpr21_challenge_tf2.4 https://github.com/suresh-guttikonda/agents/ --recursive
-      <root_folder>$ cd agents
-      <root_folder>/agents$ pip3 install -e .
-   ```
 10. Get the Active Localization code + pretrained checkpoints
    ```
       <root_folder>/agents$ cd ..
@@ -166,51 +144,3 @@ pip install tensorflow==2.6.0
          --store_plot=True \
          --seed=1198
    ```
-
-
-#### Steps to install singularity:
-1. Enable NeuroDebian repository by following instructions on [neuro-debian](http://neuro.debian.net/). Also refer [FAQ](http://neuro.debian.net/faq.html).
-2. Install Singularity-Container as follows:
-   ```
-   $ sudo apt-get install -y singularity-container
-   ```
-3. For more details, refer: [singularity guide](https://sylabs.io/guides/3.7/user-guide/index.html)
-
-
-#### Steps to create singularity image to setup project:
-0. We assume corresponding nvidia-driver is already installed in host machine.
-1. Bootstrap container definition file. 'sudo' ensure proper privileges get assigned.
-    ```
-    # command takes few minutes to completely build image
-    <path_to_def_file>$ sudo singularity build tensorflow_latest-gpu.sif tensorflow_latest-gpu.def
-    ```
-2. After successful build, verify that packages such as tensorflow+gpu are installed correctly.\
-    Note: --nv ensure cuda related packages are loaded
-    ```
-    <path_to_sif_file>$ sudo singularity shell --nv tensorflow_latest-gpu.sif
-    
-    # get driver details if above assumptions are satisfied
-    ~> nvidia-smi
-    
-    # activate virtualenv
-    ~> source /opt/venvs/py3-igibson/bin/activate
-    
-    ~> python
-    >>> import tensorflow as tf
-    >>> tf.__version__
-    >>>> tf.config.list_physical_devices() => returns list of available devices
-    ```
-3. Run demo igibson gui example. Following should open window with robot otherwise we see and error 'ERROR: Unable to initialize EGL'
-    ```
-    # Note: don't run with sudo once image is created
-    <path_to_def_file>$ singularity shell --nv -B /usr/share/glvnd tensorflow_latest-gpu.sif
-    
-    ~> source /opt/venvs/py3-igibson/bin/activate
-    
-    # launch igibson gui example
-    (py3-igibson)~> python -m gibson2.examples.demo.env_example
-    ```
-4. To Bind/Mount host machine directories within container use --bind [ref](https://sylabs.io/guides/3.0/user-guide/bind_paths_and_mounts.html)
-    ```
-    <path_to_sif_file>$ singularity shell --nv --bind /usr/share/glvnd,./src:/mnt/src tensorflow_latest-gpu.sif
-    ```

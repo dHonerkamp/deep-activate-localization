@@ -11,7 +11,6 @@ import tensorflow as tf
 from tqdm import tqdm
 from pathlib import Path
 
-# import custom tf_agents
 from environments.env_utils import datautils
 from environments.envs.localize_env import LocalizeGibsonEnv
 from pfnetwork.arguments import parse_common_args

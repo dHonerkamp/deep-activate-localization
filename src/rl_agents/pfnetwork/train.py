@@ -8,7 +8,7 @@ from tensorflow import keras
 from datetime import datetime
 import wandb
 import time
-from pfnetwork import pfnet, preprocess, arguments, pfnet_loss
+from pfnetwork import pfnet, preprocess, arguments
 
 WANDB_PROJECT = "pfnet"
 

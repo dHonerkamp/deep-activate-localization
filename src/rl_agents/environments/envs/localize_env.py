@@ -93,7 +93,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
         if self.pf_params.use_plot:
             self.init_pfnet_plots()
 
-        # for custom tf_agents we are using supports dict() type observations
         observation_space = OrderedDict()
 
         task_obs_dim = 7 + self.pf_params.observe_steps  # robot_prorpio_state (18)
@@ -202,7 +201,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
             plt.show()
 
     def _reset_vars(self):
-        # self.obstacle_map = None
         self.floor_map = None
 
         self.eps_obs = {
@@ -571,6 +569,7 @@ class LocalizeGibsonEnv(iGibsonEnv):
         """
         Render plots
         """
+        # TODO: remove the whole render function because now have render_paper()?
         if self.pf_params.use_plot:
             if particles is None:
                 if self.curr_pfnet_state is not None:
