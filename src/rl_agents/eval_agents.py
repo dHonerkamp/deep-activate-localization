@@ -177,12 +177,12 @@ if __name__ == '__main__':
         raw_args = sys.argv
         cl_args = [k.replace('-', '').replace(" ", "=").split('=')[0] for k in raw_args]
         for p in ['num_particles', 'transition_std', 'resample', 'alpha_resample_ratio', 'init_particles_distr', 'init_particles_std', 
-                  'use_plot', 'store_plot', "scene_id", "trajlen"]:
+                  'use_plot', 'store_plot', "scene_id", "trajlen", "pfnet_loadpath"]:
             if p in cl_args:
                 wandb_params[p] = params.__getattribute__(p)
                 
         # always override certain values
-        for p in ['num_parallel_environments', 'num_eval_episodes', "resume_model_name", 'resume_id', 'action_timestep', 'loop', 'env_mode']:
+        for p in ['num_parallel_environments', 'num_eval_episodes', "resume_model_name", 'resume_id', 'action_timestep', 'loop', 'env_mode', 'config_file']:
             wandb_params[p] = params.__getattribute__(p)
         
         # backwards compatibility for new keys

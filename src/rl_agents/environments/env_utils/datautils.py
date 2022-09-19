@@ -7,8 +7,6 @@ import tensorflow as tf
 import os
 from PIL import Image
 
-# from pfnetwork.pfnet import PFCell
-from functools import partial
 from igibson.utils.assets_utils import get_scene_path
 
 

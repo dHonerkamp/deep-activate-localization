@@ -14,11 +14,9 @@ from pathlib import Path
 import tensorflow as tf
 import numpy as np
 import wandb
-from wandb.integration.sb3 import WandbCallback
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import CallbackList
 
