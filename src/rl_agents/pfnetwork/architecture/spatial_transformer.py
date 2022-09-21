@@ -27,8 +27,8 @@
 
 import tensorflow as tf
 
-def transformer(U, theta, out_size):
 
+def transformer(U, theta, out_size):
     def _repeat(x, n_repeats):
         rep = tf.transpose(a=tf.expand_dims(tf.ones(shape=tf.stack([
             n_repeats,

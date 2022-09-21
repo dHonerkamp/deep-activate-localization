@@ -160,15 +160,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# nohup python -u supervised_data.py --filename=/data2/honerkam/pfnet_data/train/Rs0_floor0.tfrecord --scene_id=Rs --agent=avoid_agent --num_records=5 --custom_output rgb_obs depth_obs occupancy_grid obstacle_obs  --device_idx=1 --seed=90 &> nohup1.out &
-# nohup python -u supervised_data.py --filename=/data2/honerkam/pfnet_data/train_navagent/Rs0_floor0.tfrecord --scene_id=Rs --agent=goalnav_agent --num_records=7500 --custom_output rgb_obs depth_obs occupancy_grid obstacle_obs  --device_idx=1 --seed=90 &> nohup_datacollection1.out &
-# nohup python -u supervised_data.py --device_idx 2 --agent "goalnav_agent" --num_records "1000" --custom_output "rgb_obs" "depth_obs" "occupancy_grid" "task_obs" "obstacle_obs"  --global_map_size "1000" "1000" "1" &> nohup_datacollection1.out &
-#
-# scenes=("Beechwood_0_int" "Benevolence_2_int" "Merom_1_int" "Rs_int" "Beechwood_1_int" "Ihlen_0_int" "Pomaria_0_int" "Wainscott_0_int" "Benevolence_0_int" "Ihlen_1_int" "Pomaria_1_int" "Wainscott_1_int" "Benevolence_1_int" "Merom_0_int" "Pomaria_2_int")
-# # train_scenes=("Merom_0_int" "Benevolence_0_int" "Pomaria_0_int" "Wainscott_1_int" "Rs_int" "Ihlen_0_int" "Beechwood_1_int" "Ihlen_1_int")
-# # test_scenes=("Benevolence_1_int" "Wainscott_0_int" "Pomaria_2_int" "Benevolence_2_int" "Beechwood_0_int" "Pomaria_1_int" "Merom_1_int")
-#
-# for scene in "${scenes[@]}"; do
-#     nohup python -u supervised_data.py --filename=/data/honerkam/pfnet_data/navagent_allscenes/${scene}.tfrecord --scene_id=${scene} --agent=goalnav_agent --num_records=10000 --custom_output rgb_obs depth_obs occupancy_grid obstacle_obs --device_idx=3 --seed=90 &> nohup_datacollection${scene}.out &
-# done

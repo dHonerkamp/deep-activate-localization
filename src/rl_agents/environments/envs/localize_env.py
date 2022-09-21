@@ -47,8 +47,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
         :param config_file: config_file path
         :param scene_id: override scene_id in config file
         :param mode: headless, gui, iggui
-        :param use_tf_function: whether to wrap pfnetwork with tf.graph
-        :param init_pfnet: whether to initialize pfnetwork
         :param action_timestep: environment executes action per action_timestep second
         :param physics_timestep: physics timestep for pybullet
         :param device_idx: which GPU to run the simulation and rendering on
@@ -190,7 +188,7 @@ class LocalizeGibsonEnv(iGibsonEnv):
         self.plt_ax = None
         self.env_plts = self._get_empty_env_plots()
 
-        # HACK FigureCanvasAgg and ion is not working together
+        # FigureCanvasAgg and ion is not working together
         current_time = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.out_folder = os.path.join(self.pf_params.root_dir, f'episode_run_{current_time}')
         Path(self.out_folder).mkdir(parents=True, exist_ok=True)
@@ -244,7 +242,7 @@ class LocalizeGibsonEnv(iGibsonEnv):
         :return: info: info dictionary with any useful information
         """
 
-        # HACK: we use low update frequency
+        # we use low update frequency
         collisions = 0
         for _ in range(self.pf_params.loop):
             state, reward_unused, done, info = super(LocalizeGibsonEnv, self).step(action)
@@ -256,7 +254,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
 
         # perform particle filter update
         if self.use_pfnet:
-            # HACK: wrap stop_gradient to make sure pfnet weights are not updated during rl training
             loss_dict = self.step_pfnet(state)
             info['pred'] = loss_dict['pred'].cpu().numpy()
             info['coords'] = loss_dict['coords'].cpu().numpy()
@@ -266,8 +263,6 @@ class LocalizeGibsonEnv(iGibsonEnv):
             if self.pf_params.reward == 'pred':
                 rescale = 1
                 reward -= tf.squeeze(loss_dict['pred']).cpu().numpy() / rescale
-                # reward = tf.squeeze(reward)
-                # reward = reward.cpu().numpy()
             elif self.pf_params.reward == 'belief':
                 particles = self.curr_pfnet_state[0]
 

@@ -174,10 +174,3 @@ if __name__ == '__main__':
         run = wandb.init(**common_args, config=params, name=run_name, mode='disabled' if params.debug else 'online')
 
     main(params)
-
-# nohup python -u eval_agents.py --device_idx 3 --agent avoid_agent --trajlen 50 --custom_output "rgb_obs" "depth_obs" "likelihood_map" "obstacle_obs" "task_obs" --eval_only --use_plot --store_plot --num_eval_episodes 50 --scene_id all --global_map_size 1000 1000 1 --pfnet_loadpath "/home/honerkam/repos/deep-activate-localization/src/rl_agents/logs/pfnet_below1000_lidar030/train_navagent_below1000/chks/checkpoint_95_0.157/pfnet_checkpoint" --obs_mode occupancy_grid > nohup_eval.out &
-# ON MY DESKTOP
-# XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/lib/cuda python -u eval_agents.py --device_idx 0 --agent manual_agent --custom_output "rgb_obs" "depth_obs" "likelihood_map" "obstacle_obs" "task_obs" occupancy_grid --eval_only --use_plot --store_plot=no --num_eval_episodes 50 --pfnet_loadpath "/home/daniel/repos/deep-activate-localization/src/rl_agents/logs/pfnet_below1000_lidar030/train_navagent_below1000/chks/checkpoint_95_0.157/pfnet_checkpoint" --env_mode gui --obs_mode "occupancy_grid"
-
-
-# python -u  eval_agents.py --device_idx 2 --custom_output rgb_obs depth_obs likelihood_map obstacle_obs occupancy_grid --obs_mode occupancy_grid --pfnet_loadpath /home/honerkam/repos/deep-activate-localization/src/rl_agents/logs/pfnet_below1000_lidar030/train_navagent_below1000/chks/checkpoint_95_0.157/pfnet_checkpoint --agent goalnav_agent --resume_id zev67g1g --eval_only --use_plot --store_plot --num_eval_episodes 15 --scene_id all --global_map_size 1000 1000 1

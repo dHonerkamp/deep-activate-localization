@@ -78,7 +78,9 @@ def train_step(data, model, optimizer, train_loss, map_pixel_in_meters: float):
     with tf.GradientTape() as tape:
         # forward pass over
         output, state = model((input, state), training=True)
-        loss_dict = pfnet.PFCell.compute_mse_loss(particles=output[0], particle_weights=output[1], true_states=data['true_states'], trav_map_resolution=map_pixel_in_meters)
+        loss_dict = pfnet.PFCell.compute_mse_loss(particles=output[0], particle_weights=output[1],
+                                                  true_states=data['true_states'],
+                                                  trav_map_resolution=map_pixel_in_meters)
 
         loss_pred = tf.reduce_mean(loss_dict['pred'])
 
@@ -100,8 +102,8 @@ def vis_output(env, output, state, data):
 
     b = 0
     for t in range(data['observation'].shape[1]):
-        env.render(particles=output[0][b:b+1, t],
-                   particle_weights=output[1][b:b+1, t],
+        env.render(particles=output[0][b:b + 1, t],
+                   particle_weights=output[1][b:b + 1, t],
                    floor_map=state[2][b],
                    gt_pose=data['true_states'][b, t],
                    observation=data['observation'][b, t],
@@ -178,9 +180,10 @@ def run_training(params):
             processed_data = prepare_data(raw_train_record, params=params)
 
             # model.reset_supervised(processed_data['init_particles'], processed_data['init_particle_weights'])
-            train_loss_dict, train_output, train_state = train_step(data=processed_data, model=model, optimizer=optimizer, train_loss=train_loss, map_pixel_in_meters=params.map_pixel_in_meters)
+            train_loss_dict, train_output, train_state = train_step(data=processed_data, model=model,
+                                                                    optimizer=optimizer, train_loss=train_loss,
+                                                                    map_pixel_in_meters=params.map_pixel_in_meters)
             train_loss_dicts.append(train_loss_dict)
-
 
         if params.run_evaluation:
             eval_itr = eval_ds.as_numpy_iterator()
@@ -190,7 +193,6 @@ def run_training(params):
                 raw_eval_record = next(eval_itr)
                 processed_data = prepare_data(raw_eval_record, params=params)
 
-
                 eval_loss_dict, eval_output, eval_state = eval_step(data=processed_data,
                                                                     model=model,
                                                                     eval_loss=eval_loss,
@@ -199,7 +201,8 @@ def run_training(params):
 
         if epoch % 5 == 0:
             print("=====> saving trained model ")
-            model.save_weights(os.path.join(train_dir, f'chks/checkpoint_{epoch}_{eval_loss.result():03.3f}/pfnet_checkpoint'))
+            model.save_weights(
+                os.path.join(train_dir, f'chks/checkpoint_{epoch}_{eval_loss.result():03.3f}/pfnet_checkpoint'))
             # tf.saved_model.save(model, os.path.join(train_dir, f'chks/checkpoint_{epoch}_{train_loss.result():03.3f}/pfnet_checkpoint'))
 
         train_loss_dicts = stack_loss_dicts(train_loss_dicts, 0, concat=True)
@@ -244,6 +247,3 @@ if __name__ == '__main__':
     params.run_evaluation = True
 
     run_training(params)
-
-
-# nohup python -u train.py --logpath=rgb_depth --num_train_samples=7500 --num_eval_samples=816 --obs_mode=rgb-depth --init_particles_distr=tracking --init_particles_std 0.15 0.523599 --trajlen=24 --num_particles=30 --transition_std 0. 0. --resample=false --batch_size=6 --learning_rate=1e-4 --epochs=100 --device_idx=1 --seed=49 &> nohup1.out &

@@ -30,6 +30,7 @@ import numpy as np
 import pybullet as p
 import tensorflow as tf
 
+
 def normalize(angle):
     """
     Normalize the angle to [-pi, pi]
@@ -39,6 +40,7 @@ def normalize(angle):
     quaternion = p.getQuaternionFromEuler(np.array([0, 0, angle]))
     euler = p.getEulerFromQuaternion(quaternion)
     return euler[2]
+
 
 def read_tfrecord(example_proto):
     """
@@ -58,6 +60,7 @@ def read_tfrecord(example_proto):
     # Parse the input `tf.train.Example` proto using the dictionary above.
     return tf.io.parse_single_example(example_proto, feature_description)
 
+
 def decode_image(img_str, resize=None):
     """
     decode image from tfrecord data
@@ -70,6 +73,7 @@ def decode_image(img_str, resize=None):
     if resize is not None:
         img_str = cv2.resize(img_str, resize)
     return img_str
+
 
 def raw_images_to_array(images):
     """
@@ -84,6 +88,7 @@ def raw_images_to_array(images):
         image_list.append(image)
     return np.stack(image_list)
 
+
 def normalize_observation(x):
     """
     normalize observation input: an rgb image or a depth image
@@ -93,8 +98,9 @@ def normalize_observation(x):
     # resale to [-1, 1]
     if x.ndim == 2 or x.shape[2] == 1:  # depth
         return x * (2.0 / 100.0) - 1.0
-    else:   # rgb
+    else:  # rgb
         return x * (2.0 / 255.0) - 1.0
+
 
 def denormalize_observation(x):
     """
@@ -109,6 +115,7 @@ def denormalize_observation(x):
         x = (x + 1.0) * (255.0 / 2.0)
     return x.astype(np.int32)
 
+
 def process_roomid_map(roomidmap_feature):
     """
     decode room image from tfrecord data
@@ -118,6 +125,7 @@ def process_roomid_map(roomidmap_feature):
     # axes is not transposed unlike others
     roomidmap = np.atleast_3d(decode_image(roomidmap_feature))
     return roomidmap
+
 
 def process_wall_map(wallmap_feature):
     """
@@ -131,6 +139,7 @@ def process_wall_map(wallmap_feature):
     floormap = normalize_map(floormap.astype(np.float32))
     return floormap
 
+
 def normalize_map(x):
     """
     normalize map input
@@ -138,7 +147,8 @@ def normalize_map(x):
     :return np.ndarray: normalized map (H, W, ch)
     """
     # rescale to [0, 2], later zero padding will produce equivalent obstacle
-    return x * (2.0/255.0)
+    return x * (2.0 / 255.0)
+
 
 def pad_images(images, new_shape):
     """
@@ -154,6 +164,7 @@ def pad_images(images, new_shape):
         new_img[:old_shape[0], :old_shape[1], :old_shape[2]] = img
         pad_images.append(new_img)
     return pad_images
+
 
 def transform_raw_record(raw_record, params):
     """
@@ -192,7 +203,7 @@ def transform_raw_record(raw_record, params):
         odom = np.frombuffer(raw_odom, np.float32).reshape(-1, 3)[:trajlen, :]
         # odometry.append([odom[i:i+bptt_steps] for i in seq_indices])
         odometry.append(odom)
-    trans_record['odometry'] = np.stack(odometry)   # (batch_size, trajlen, 3)
+    trans_record['odometry'] = np.stack(odometry)  # (batch_size, trajlen, 3)
 
     # process rgb/depth observation
     rgbs = []
@@ -208,11 +219,12 @@ def transform_raw_record(raw_record, params):
 
     assert obs_mode in ['rgb', 'depth', 'rgb-depth']
     if obs_mode == 'rgb-depth':
-        trans_record['observation'] = np.concatenate((np.stack(rgbs), np.stack(depths)), axis=-1)   # (batch_size, trajlen, 56, 56, 4)
+        trans_record['observation'] = np.concatenate((np.stack(rgbs), np.stack(depths)),
+                                                     axis=-1)  # (batch_size, trajlen, 56, 56, 4)
     elif obs_mode == 'depth':
-        trans_record['observation'] = np.stack(depths)   # (batch_size, trajlen, 56, 56, 1)
+        trans_record['observation'] = np.stack(depths)  # (batch_size, trajlen, 56, 56, 1)
     else:
-        trans_record['observation'] = np.stack(rgbs)    # (batch_size, trajlen, 56, 56, 3)
+        trans_record['observation'] = np.stack(rgbs)  # (batch_size, trajlen, 56, 56, 3)
 
     # process map room id
     map_roomids = []
@@ -229,12 +241,12 @@ def transform_raw_record(raw_record, params):
 
     # generate random particle states
     trans_record['init_particles'] = random_particles(
-                                        num_particles,
-                                        init_particles_distr,
-                                        trans_record['true_states'][:, 0, :],
-                                        init_particles_cov,
-                                        map_roomids
-                                    )   # (batch_size, num_particles, 3)
+        num_particles,
+        init_particles_distr,
+        trans_record['true_states'][:, 0, :],
+        init_particles_cov,
+        map_roomids
+    )  # (batch_size, num_particles, 3)
 
     # zero pad map wall image
     pad_map_walls = pad_images(map_walls, global_map_size)
@@ -242,6 +254,7 @@ def transform_raw_record(raw_record, params):
     trans_record['org_map_shapes'] = np.stack(org_map_shapes)  # (batch_size, 3)
 
     return trans_record
+
 
 def random_particles(num_particles, particles_distr, state, particles_cov, map_roomids):
     """
@@ -273,9 +286,9 @@ def random_particles(num_particles, particles_distr, state, particles_cov, map_r
             # mask the room the initial state is in
             roomidmap = map_roomids[b_idx]
             masked_map = (roomidmap == roomidmap[
-                                        int(np.rint(state[b_idx][0])),
-                                        int(np.rint(state[b_idx][1]))
-                                    ])
+                int(np.rint(state[b_idx][0])),
+                int(np.rint(state[b_idx][1]))
+            ])
             # get bounding box for more efficient sampling
             rmin, rmax, cmin, cmax = bounding_box(masked_map)
 
@@ -283,7 +296,7 @@ def random_particles(num_particles, particles_distr, state, particles_cov, map_r
             sample_i = 0
             b_particles = []
             while sample_i < num_particles:
-                particle = np.random.uniform(low=(rmin, cmin, 0.0), high=(rmax, cmax, 2.0*np.pi), size=(3, ))
+                particle = np.random.uniform(low=(rmin, cmin, 0.0), high=(rmax, cmax, 2.0 * np.pi), size=(3,))
                 # reject if mask is zero
                 if not masked_map[int(np.rint(particle[0])), int(np.rint(particle[1]))]:
                     continue
@@ -295,6 +308,7 @@ def random_particles(num_particles, particles_distr, state, particles_cov, map_r
 
     particles = np.stack(particles)
     return particles
+
 
 def bounding_box(img):
     """
@@ -309,8 +323,8 @@ def bounding_box(img):
 
     return rmin, rmax, cmin, cmax
 
-def get_dataflow(filenames, batch_size, s_buffer_size=100, is_training=False):
 
+def get_dataflow(filenames, batch_size, s_buffer_size=100, is_training=False):
     ds = tf.data.TFRecordDataset(filenames)
     if is_training:
         ds = ds.shuffle(s_buffer_size, reshuffle_each_iteration=True)

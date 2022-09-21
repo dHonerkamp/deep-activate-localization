@@ -48,7 +48,7 @@ def get_floor_map(scene_id, floor_num, trav_map_resolution, trav_map_erosion, pa
 
     trav_map[obstacle_map == 0] = 0
 
-    # HACK: use same rescaling as in iGibsonEnv
+    # use same rescaling as in iGibsonEnv
     # height, width = trav_map.shape
     # resize = int(height * self.map_pixel_in_meters / self.trav_map_resolution)
     trav_map = cv2.resize(trav_map, resize)
@@ -59,7 +59,7 @@ def get_floor_map(scene_id, floor_num, trav_map_resolution, trav_map_erosion, pa
     trav_map[trav_map == 255] = 1
     trav_map = trav_map[:, :, np.newaxis]
 
-    # HACK: right zero-pad floor/obstacle map
+    # right zero-pad floor/obstacle map
     if pad_map_size is not None:
         trav_map = pad_images(trav_map, pad_map_size)
         occupancy_map_small = pad_images(occupancy_map_small, pad_map_size)
@@ -548,7 +548,7 @@ def transform_raw_record(parsed_record, params):
     trans_record['true_states'] = parsed_record['state'].reshape([batch_size] + list(parsed_record['state_shape'][0]))[
                                   :, :trajlen]
 
-    # HACK: get floor and obstance map from environment instance for the scene
+    # get floor and obstance map from environment instance for the scene
     trans_record['org_map_shape'] = []
     trans_record['trav_map'] = []
     trans_record['global_map'] = []
@@ -562,9 +562,7 @@ def transform_raw_record(parsed_record, params):
             scene_id = None
             floor_num = None
 
-        # HACK: right zero-pad floor/obstacle map
-        # obstacle_map, _ = env.get_obstacle_map(scene_id, floor_num, pad_map_size)
-        # floor_map, org_map_shape, trav_map = env.get_floor_map(scene_id, floor_num, pad_map_size)
+        # right zero-pad floor/obstacle map
         floor_map, org_map_shape, trav_map = get_floor_map(scene_id=scene_id,
                                                            floor_num=floor_num,
                                                            pad_map_size=pad_map_size,

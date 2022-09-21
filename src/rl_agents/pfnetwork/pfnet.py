@@ -63,6 +63,7 @@ class PFCell(keras.layers.AbstractRNNCell):
     Cell states: particle_states, particle_weights
     Cell outputs: particle_states, particle_weights (updated)
     """
+
     def __init__(self, params, is_igibson: bool, **kwargs):
         """
         :param params: parsed arguments
@@ -99,8 +100,8 @@ class PFCell(keras.layers.AbstractRNNCell):
                 params.init_particles_cov,
                 params.particles_range)), dtype=tf.float32)
         particle_weights = tf.constant(np.log(1.0 / float(params.num_particles)),
-                                            shape=(params.batch_size, params.num_particles),
-                                            dtype=tf.float32)
+                                       shape=(params.batch_size, params.num_particles),
+                                       dtype=tf.float32)
         return particles, particle_weights
 
     @staticmethod
@@ -175,7 +176,8 @@ class PFCell(keras.layers.AbstractRNNCell):
         est_pose_xy = tf.math.reduce_sum(tf.math.multiply(particles[..., :2], lin_weights[..., None]), axis=-2)
 
         particle_theta_normed = norm_angle(particles[..., 2])
-        est_pose_theta = tf.math.reduce_sum(tf.math.multiply(particle_theta_normed, lin_weights), axis=-1, keepdims=True)
+        est_pose_theta = tf.math.reduce_sum(tf.math.multiply(particle_theta_normed, lin_weights), axis=-1,
+                                            keepdims=True)
 
         return tf.concat([est_pose_xy, est_pose_theta], axis=-1)
 
@@ -197,7 +199,8 @@ class PFCell(keras.layers.AbstractRNNCell):
         num_particles = particle_weights.shape[-1]
         likelihood_map_ext[:, :, 0] = np.squeeze(floor_map).copy() > 0  # clip to 0 or 1
 
-        xy_clipped = np.clip(particles[..., :2], (0, 0), (likelihood_map_ext.shape[0] - 1, likelihood_map_ext.shape[1] - 1)).astype(int)
+        xy_clipped = np.clip(particles[..., :2], (0, 0),
+                             (likelihood_map_ext.shape[0] - 1, likelihood_map_ext.shape[1] - 1)).astype(int)
 
         for idx in range(num_particles):
             x, y = xy_clipped[idx]
@@ -211,14 +214,14 @@ class PFCell(keras.layers.AbstractRNNCell):
 
         return likelihood_map_ext
 
-
     @property
     def state_size(self):
         """
         Size(s) of state(s) used by this cell
         :return tuple(TensorShapes): shape of particle_states, particle_weights
         """
-        return [tf.TensorShape(self.states_shape[1:]), tf.TensorShape(self.weights_shape[1:]), tf.TensorShape(self.map_shape[1:])]
+        return [tf.TensorShape(self.states_shape[1:]), tf.TensorShape(self.weights_shape[1:]),
+                tf.TensorShape(self.map_shape[1:])]
 
     @property
     def output_size(self):
@@ -226,7 +229,8 @@ class PFCell(keras.layers.AbstractRNNCell):
         Size(s) of output(s) produced by this cell
         :return tuple(TensorShapes): shape of particle_states, particle_weights
         """
-        return [tf.TensorShape(self.states_shape[1:]), tf.TensorShape(self.weights_shape[1:]), tf.TensorShape(self.map_shape[1:])]
+        return [tf.TensorShape(self.states_shape[1:]), tf.TensorShape(self.weights_shape[1:]),
+                tf.TensorShape(self.map_shape[1:])]
 
     def call(self, input, state):
         """
@@ -258,7 +262,8 @@ class PFCell(keras.layers.AbstractRNNCell):
 
         # resample
         if self.params.resample:
-            particles, particle_weights = self.resample(particles, particle_weights, alpha=self.params.alpha_resample_ratio)
+            particles, particle_weights = self.resample(particles, particle_weights,
+                                                        alpha=self.params.alpha_resample_ratio)
 
         # construct output before motion update
         output = [particles, particle_weights]
@@ -269,7 +274,6 @@ class PFCell(keras.layers.AbstractRNNCell):
 
         state = [particles, particle_weights, global_map]
         return output, state
-
 
     @tf.function(jit_compile=True)
     def observation_update(self, global_map, particle_states, observation):
@@ -291,7 +295,8 @@ class PFCell(keras.layers.AbstractRNNCell):
 
         # transform global maps to local maps
         # TODO: only set agent_at_bottom true if using [rgb, d], not for lidar?
-        local_maps = PFCell.transform_maps(global_map, particle_states, (28, 28), self.params.window_scaler, agent_at_bottom=True, flip_map=self.is_igibson)
+        local_maps = PFCell.transform_maps(global_map, particle_states, (28, 28), self.params.window_scaler,
+                                           agent_at_bottom=True, flip_map=self.is_igibson)
 
         # rescale from [0, 2] to [-1, 1]    -> optional
         local_maps = -(local_maps - 1)
@@ -342,16 +347,17 @@ class PFCell(keras.layers.AbstractRNNCell):
         particle_weights = particle_weights - tf.math.reduce_logsumexp(particle_weights, axis=-1, keepdims=True)
 
         # sample uniform weights
-        uniform_weights = tf.constant(np.log(1.0/float(num_particles)), shape=(batch_size, num_particles), dtype=tf.float32)
+        uniform_weights = tf.constant(np.log(1.0 / float(num_particles)), shape=(batch_size, num_particles),
+                                      dtype=tf.float32)
 
         # build sample distribution q(s) and update particle weights
         if alpha < 1.0:
             # soft-resampling
             q_weights = tf.stack([particle_weights + np.log(alpha),
                                   uniform_weights + np.log(1.0 - alpha)],
-                                  axis=-1)
+                                 axis=-1)
             q_weights = tf.math.reduce_logsumexp(q_weights, axis=-1, keepdims=False)
-            q_weights = q_weights - tf.reduce_logsumexp(q_weights, axis=-1, keepdims=True) # normalized
+            q_weights = q_weights - tf.reduce_logsumexp(q_weights, axis=-1, keepdims=True)  # normalized
 
             particle_weights = particle_weights - q_weights  # unnormalized
         else:
@@ -363,13 +369,13 @@ class PFCell(keras.layers.AbstractRNNCell):
         indices = tf.random.categorical(q_weights, num_particles, dtype=tf.int32)  # shape: (bs, k)
 
         # index into particles
-        helper = tf.range(0, batch_size*num_particles, delta=num_particles, dtype=tf.int32)  # (batch, )
+        helper = tf.range(0, batch_size * num_particles, delta=num_particles, dtype=tf.int32)  # (batch, )
         indices = indices + tf.expand_dims(helper, axis=1)
 
         particle_states = tf.reshape(particle_states, (batch_size * num_particles, 3))
         particle_states = tf.gather(particle_states, indices=indices, axis=0)  # (bs, k, 3)
 
-        particle_weights = tf.reshape(particle_weights, (batch_size * num_particles, ))
+        particle_weights = tf.reshape(particle_weights, (batch_size * num_particles,))
         particle_weights = tf.gather(particle_weights, indices=indices, axis=0)  # (bs, k)
 
         return particle_states, particle_weights
@@ -383,13 +389,13 @@ class PFCell(keras.layers.AbstractRNNCell):
         :return (batch, k, 3): particle states updated with the odometry and optionally transition noise
         """
 
-        translation_std = self.params.transition_std[0]   # in pixels
-        rotation_std = self.params.transition_std[1]    # in radians
+        translation_std = self.params.transition_std[0]  # in pixels
+        rotation_std = self.params.transition_std[1]  # in radians
 
-        part_x, part_y, part_th = tf.unstack(particle_states, axis=-1, num=3)   # (bs, k, 3)
+        part_x, part_y, part_th = tf.unstack(particle_states, axis=-1, num=3)  # (bs, k, 3)
 
         # non-noisy odometry
-        odometry = tf.expand_dims(odometry, axis=1) # (batch_size, 1, 3)
+        odometry = tf.expand_dims(odometry, axis=1)  # (batch_size, 1, 3)
         odom_x, odom_y, odom_th = tf.unstack(odometry, axis=-1, num=3)
 
         # sample noisy orientation
@@ -409,11 +415,12 @@ class PFCell(keras.layers.AbstractRNNCell):
         delta_x = delta_x + tf.random.normal(delta_x.get_shape(), mean=0.0, stddev=1.0) * translation_std
         delta_y = delta_y + tf.random.normal(delta_y.get_shape(), mean=0.0, stddev=1.0) * translation_std
 
-        return tf.stack([part_x + delta_x, part_y + delta_y, part_th + delta_th], axis=-1)   # (bs, k, 3)
+        return tf.stack([part_x + delta_x, part_y + delta_y, part_th + delta_th], axis=-1)  # (bs, k, 3)
 
     @staticmethod
     @tf.function(jit_compile=True)
-    def transform_maps(global_map, particle_states, local_map_size, window_scaler=None, agent_at_bottom: bool = True, flip_map: bool = False):
+    def transform_maps(global_map, particle_states, local_map_size, window_scaler=None, agent_at_bottom: bool = True,
+                       flip_map: bool = False):
         """
         Implements global to local map transformation
         :param global_map: global map input (batch, None, None, ch)
@@ -441,8 +448,8 @@ class PFCell(keras.layers.AbstractRNNCell):
         global_width = tf.cast(input_shape[2], tf.float32)
         height_inverse = 1.0 / global_height
         width_inverse = 1.0 / global_width
-        zero = tf.constant(0, dtype=tf.float32, shape=(total_samples, ))
-        one = tf.constant(1, dtype=tf.float32, shape=(total_samples, ))
+        zero = tf.constant(0, dtype=tf.float32, shape=(total_samples,))
+        one = tf.constant(1, dtype=tf.float32, shape=(total_samples,))
 
         # normalize orientations and precompute cos and sin functions
         theta = -flat_states[:, 2] - 0.5 * np.pi
@@ -464,8 +471,8 @@ class PFCell(keras.layers.AbstractRNNCell):
 
         # 3: scale down the map
         if window_scaler is not None:
-            scale_x = tf.fill((total_samples, ), float(local_map_size[1] * window_scaler) * width_inverse)
-            scale_y = tf.fill((total_samples, ), float(local_map_size[0] * window_scaler) * height_inverse)
+            scale_x = tf.fill((total_samples,), float(local_map_size[1] * window_scaler) * width_inverse)
+            scale_y = tf.fill((total_samples,), float(local_map_size[0] * window_scaler) * height_inverse)
         else:
             # identity
             scale_x = one
@@ -478,7 +485,7 @@ class PFCell(keras.layers.AbstractRNNCell):
         transform_m = tf.matmul(tf.matmul(transm1, rotm), scalem)
         # 4: translate the local map s.t. the particle defines the bottom mid_point instead of the center
         if agent_at_bottom:
-            translate_y2 = tf.constant(-1.0, dtype=tf.float32, shape=(total_samples, ))
+            translate_y2 = tf.constant(-1.0, dtype=tf.float32, shape=(total_samples,))
 
             transm2 = tf.stack((one, zero, zero, zero, one, translate_y2, zero, zero, one), axis=1)
             transm2 = tf.reshape(transm2, [total_samples, 3, 3])
@@ -518,13 +525,14 @@ class PFCell(keras.layers.AbstractRNNCell):
             # print(f"zzzzzzzzzzzzzzz {(time.time() - t) / 60:.3f}")
 
         # reshape if any information has lost in spatial transform network
-        local_maps = tf.reshape(local_maps, [batch_size, num_particles, local_map_size[0], local_map_size[1], global_map.shape.as_list()[-1]])
+        local_maps = tf.reshape(local_maps, [batch_size, num_particles, local_map_size[0], local_map_size[1],
+                                             global_map.shape.as_list()[-1]])
 
         # NOTE: flip to have the same alignment as the other modalities
         if flip_map:
             local_maps = tf.experimental.numpy.flip(local_maps, -2)
 
-        return local_maps   # (batch_size, num_particles, 28, 28, 1)
+        return local_maps  # (batch_size, num_particles, 28, 28, 1)
 
 
 def pfnet_model(params, is_igibson: bool):
@@ -537,20 +545,21 @@ def pfnet_model(params, is_igibson: bool):
         sz = 128
     else:
         sz = 56
-        
-    observation = keras.Input(shape=[params.trajlen, sz, sz, obs_ch], batch_size=params.batch_size)   # (bs, T, 56, 56, C)
-    odometry = keras.Input(shape=[params.trajlen, 3], batch_size=params.batch_size)    # (bs, T, 3)
 
-    global_map = keras.Input(shape=params.global_map_size, batch_size=params.batch_size)   # (bs, H, W, 1)
-    particle_states = keras.Input(shape=[params.num_particles, 3], batch_size=params.batch_size)   # (bs, k, 3)
-    particle_weights = keras.Input(shape=[params.num_particles], batch_size=params.batch_size)    # (bs, k)
+    observation = keras.Input(shape=[params.trajlen, sz, sz, obs_ch],
+                              batch_size=params.batch_size)  # (bs, T, 56, 56, C)
+    odometry = keras.Input(shape=[params.trajlen, 3], batch_size=params.batch_size)  # (bs, T, 3)
+
+    global_map = keras.Input(shape=params.global_map_size, batch_size=params.batch_size)  # (bs, H, W, 1)
+    particle_states = keras.Input(shape=[params.num_particles, 3], batch_size=params.batch_size)  # (bs, k, 3)
+    particle_weights = keras.Input(shape=[params.num_particles], batch_size=params.batch_size)  # (bs, k)
 
     cell = PFCell(params, is_igibson=is_igibson)
     rnn = keras.layers.RNN(cell, return_sequences=True, return_state=params.return_state, stateful=False)
 
     state = [particle_states, particle_weights, global_map]
     input = (observation, odometry)
-    
+
     x = rnn(inputs=input, initial_state=state)
     output, out_state = x[:2], x[2:]
 
