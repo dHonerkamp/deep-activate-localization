@@ -8,6 +8,8 @@ from wandb.integration.sb3 import WandbCallback
 import os
 import wandb
 from pathlib import Path
+import copy
+from argparse import Namespace
 
 from environments.envs.localize_env import LocalizeGibsonEnv
 
@@ -147,6 +149,37 @@ def get_logdir(run_name: str):
         i += 1
     logdir.mkdir(parents=True)
     return logdir
+
+
+def render_high_res(params, trajectories, env):
+    # render with high-res observations
+    if (params.use_plot or params.store_plot):
+        if isinstance(params, Namespace):
+            params = vars(params)
+        hr_params = DotDict(copy.deepcopy(dict(params)))
+        hr_params.custom_output.remove('likelihood_map')
+        hr_params['high_res'] = True
+        # hr_env = make_sbl_env(rank=0, seed=hr_params.seed, params=hr_params)()
+        hr_env = create_env(hr_params, pfnet_model=None)
+        hr_env.scene_ids = []
+
+        hr_env.reset()
+        
+        for n, traj in enumerate(trajectories):
+            hr_env.config["scene_id"] = traj.scene_id
+            hr_env.reload_model(traj.scene_id)
+            # hr_env.reset()
+            # hr_env.scene.reset_floor(floor=traj.floor_num)
+            for i in range(len(traj.observation)):
+                hr_env.robots[0].set_position_orientation(traj.robot_position[i], traj.robot_orientation[i])
+                hr_env.step(np.array([0, 0]))
+                hr_state = hr_env.get_state()
+                
+                traj.observation[i]['rgb_obs'] = hr_state['rgb']        
+                traj.observation[i]['depth_obs'] = hr_state['depth']   
+                traj.observation[i]['occupancy_grid'] = hr_state['occupancy_grid']
+                     
+            figures = traj.store_video(out_folder=env.out_folder, episode_number=n)
 
     
 class DotDict(dict):

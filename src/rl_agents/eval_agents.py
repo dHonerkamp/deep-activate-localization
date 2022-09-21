@@ -21,7 +21,7 @@ from pfnetwork.train import WANDB_PROJECT, stack_loss_dicts, calc_metrics
 from sbl_train_eval import make_sbl_env
 from custom_agents.stable_baselines_utils import DotDict, create_env
 from environments.env_utils import datautils
-from custom_agents.stable_baselines_utils import get_run_name, get_logdir
+from custom_agents.stable_baselines_utils import get_run_name, get_logdir, render_high_res
 from supervised_data import get_scene_ids
 from render_paper import Trajectory
 from pfnetwork import pfnet
@@ -63,7 +63,7 @@ def evaluate(params, distribution, std_deviation, num_particles, particles_range
     trajectories = []
     for i in tqdm(range(min(params.num_eval_episodes, 100))):
         obs = env.reset()
-        traj = Trajectory(scene_id=env.config["scene_id"])
+        traj = Trajectory(scene_id=env.config["scene_id"], floor_num=env.task.floor_num)
         traj.add(observation=obs, 
                  gt_pose=env.curr_gt_pose, 
                  est_pose=env.curr_est_pose,
@@ -99,7 +99,7 @@ def evaluate(params, distribution, std_deviation, num_particles, particles_range
                 
                 if done:
                     trajectories.append(traj)
-                    # figures = traj.store_video(out_folder=env.out_folder, episode_number=i)
+                    figures = traj.store_video(out_folder=env.out_folder, episode_number=i)
     
     test_loss_dicts = stack_loss_dicts(test_loss_dicts, 0, concat=True)
     for k in test_loss_dicts.keys():
@@ -112,43 +112,10 @@ def evaluate(params, distribution, std_deviation, num_particles, particles_range
     print('done')
     
     env.close()
-    # NOTE: just to have high-res images for the paper
-    if (params.use_plot or params.store_plot):
-        if isinstance(params, Namespace):
-            params = vars(params)
-        hr_params = DotDict(copy.deepcopy(dict(params)))
-        hr_params.custom_output.remove('likelihood_map')
-        hr_params['high_res'] = True
-        # hr_env = make_sbl_env(rank=0, seed=hr_params.seed, params=hr_params)()
-        hr_env = create_env(hr_params, pfnet_model=None)
-        hr_env.scene_ids = []
 
-        hr_env.reset()
-        
-        for n, traj in enumerate(trajectories):
-            hr_env.config["scene_id"] = traj.scene_id
-            hr_env.reload_model(traj.scene_id)
-            for i in range(len(traj.observation)):
-                hr_env.robots[0].set_position_orientation(traj.robot_position[i], traj.robot_orientation[i])
-                hr_state = hr_env.get_state()
-                # hr_obs = hr_env.process_state(hr_state)
-                
-                traj.observation[i]['rgb_obs'] = hr_state['rgb']        
-                traj.observation[i]['depth_obs'] = hr_state['depth']   
-                traj.observation[i]['occupancy_grid'] = hr_state['occupancy_grid']
-                
-                # from matplotlib import pyplot as plt
-                # f, ax = plt.subplots(1, 1)
-                # # ax.imshow(self.eps_obs['depth'][-1])
-                # ax.imshow(hr_state['rgb'])
-                # f.savefig('test2.png')
-                     
-            figures = traj.store_video(out_folder=env.out_folder, episode_number=n)
+    # render_high_res(params, trajectories, env)
     
-    
-    
-    print("donesies 1")
-    
+
 def main(params):
     alpha_resample = 0.5
     i = 0

@@ -20,8 +20,9 @@ def _draw_arrow(ax, robot_pose, color, alpha):
 
 
 class Trajectory:
-    def __init__(self, scene_id) -> None:
+    def __init__(self, scene_id, floor_num) -> None:
         self.scene_id = scene_id
+        self.floor_num = floor_num
         self.observation = list()
         # self.floor_map = list()
         self.gt_pose = list()
