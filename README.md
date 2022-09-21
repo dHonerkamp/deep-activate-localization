@@ -3,13 +3,14 @@
 Repository providing the source code for the paper "Active Particle Filter Networks: Efficient Active Localization in Continuous Action Spaces and Large Maps", see the [project website](http://apfn.cs.uni-freiburg.de).
 Please cite the paper as follows:
 
-TODO
-<!-- @article{honerkamp2021learning,
-    title={N2M2: Learning Navigation for Arbitrary Mobile Manipulation Motions in Unseen and Dynamic Environments},
-    author={Daniel Honerkamp and Tim Welschehold and Abhinav Valada},
-    journal={arXiv preprint arXiv:2206.08737},
-    year={2022},
-} -->
+```
+   @article{honerkamp2021active,
+            title={Active Particle Filter Networks: Efficient Active Localization in Continuous Action Spaces and Large Maps},
+            author={Honerkamp, Daniel and Guttikonda, Suresh and Valada, Abhinav},
+            journal={arXiv preprint arXiv:2209.09646},
+            year={2022},
+   }
+```
 
 The PF-net modules in this repository is based on https://github.com/AdaCompNUS/pfnet and implemented in tensorflow. The RL agents are implemented in pytorch based on stable-baselines3.
 
@@ -62,21 +63,7 @@ The PF-net modules in this repository is based on https://github.com/AdaCompNUS/
     </joint>
    ```
 
-[//]: # (7. Install additional packages)
 
-[//]: # (   ```)
-
-[//]: # (      <root_folder>$ pip install --upgrade pip)
-
-[//]: # (      <root_folder>$ pip install tensorflow==2.6.0)
-
-[//]: # (      <root_folder>$ pip install -U numpy==1.21.1)
-
-[//]: # (      <root_folder>$ pip install -U scikit-learn)
-
-[//]: # (      <root_folder>$ conda install -c anaconda cudnn=7.6.5)
-
-[//]: # (   ```)
 6. Test tensorflow installation is successful
    ```
       python3 -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
