@@ -43,7 +43,7 @@ def collect_data(env, params, filename, num_records=10):
     except BaseException as e:
         print(f"Sanity check for {env.config['scene_id']} failed with {e}")
         return
-        
+
 
 def collect_scene(params, scene_id: str, dir: str):
     env = LocalizeGibsonEnv(
@@ -62,10 +62,10 @@ def collect_scene(params, scene_id: str, dir: str):
     if os.path.exists(filename):
         print(f'File {os.path.abspath(filename)} already exists !!!')
         return
-            
+
     collect_data(env, params, filename, params.num_records)
-    
-    
+
+
 def get_scene_sizes():
     from PIL import Image
     import matplotlib.pyplot as plt
@@ -93,11 +93,11 @@ def get_scene_sizes():
 
 def get_small_scenes(global_map_size):
     sizes, scene_ids = get_scene_sizes()
-    
+
     scenes = []
     for s, scene_id in zip(sizes, scene_ids):
         if np.max(s) <= np.max(global_map_size):
-            scenes.append(scene_id)  
+            scenes.append(scene_id)
     return scenes
 
 
@@ -111,47 +111,48 @@ def get_scene_ids(global_map_size):
     else:
         scene_ids = get_small_scenes(global_map_size)
         scene_ids = np.random.permutation(scene_ids)
-        
+
         split = int((1 - 0.15) * len(scene_ids))
         train_scenes, test_scenes = scene_ids[:split], scene_ids[split:]
         print(f"{len(train_scenes)} train scenes, {len(test_scenes)} test scenes")
     return list(train_scenes), list(test_scenes)
-    
+
 
 def collect_all_scenes(params):
     import multiprocessing
     multiprocessing.set_start_method('forkserver')
     max_processes = 16
-    
+
     train_scenes, test_scenes = get_scene_ids(params.global_map_size)
-    
+
     dir = Path("/data/honerkam/pfnet_data")
     train_dir = dir / f"train_navagent_below{np.max(params.global_map_size)}"
     test_dir = dir / f"test_navagent_below{np.max(params.global_map_size)}"
     train_dir.mkdir(exist_ok=True)
     test_dir.mkdir(exist_ok=True)
-    
+
     with multiprocessing.Pool(processes=max_processes) as pool:
-        out = pool.starmap(collect_scene, 
-                           [(params, scene, train_dir if (scene in train_scenes) else test_dir) for scene in train_scenes + test_scenes],
+        out = pool.starmap(collect_scene,
+                           [(params, scene, train_dir if (scene in train_scenes) else test_dir) for scene in
+                            train_scenes + test_scenes],
                            chunksize=1)
-                
+
     print("done", out)
-    
-    
+
+
 def main():
     logging.set_verbosity(logging.INFO)
     tf.compat.v1.enable_v2_behavior()
 
     params = parse_common_args(env_name='igibson', collect_data=True)
-    
+
     if params.debug:
         dir = Path(params.filename).absolute()
         dir.mkdir(exist_ok=True)
-        f = Path("/data/honerkam/pfnet_data/blub/Rs_floor0.tfrecord") 
+        f = Path("/data/honerkam/pfnet_data/blub/Rs_floor0.tfrecord")
         if f.exists():
             f.unlink()
-            
+
         collect_scene(params, dir=dir, scene_id=params.scene_id)
     else:
         collect_all_scenes(params)
@@ -159,7 +160,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
 # nohup python -u supervised_data.py --filename=/data2/honerkam/pfnet_data/train/Rs0_floor0.tfrecord --scene_id=Rs --agent=avoid_agent --num_records=5 --custom_output rgb_obs depth_obs occupancy_grid obstacle_obs  --device_idx=1 --seed=90 &> nohup1.out &
 # nohup python -u supervised_data.py --filename=/data2/honerkam/pfnet_data/train_navagent/Rs0_floor0.tfrecord --scene_id=Rs --agent=goalnav_agent --num_records=7500 --custom_output rgb_obs depth_obs occupancy_grid obstacle_obs  --device_idx=1 --seed=90 &> nohup_datacollection1.out &
@@ -172,5 +172,3 @@ if __name__ == '__main__':
 # for scene in "${scenes[@]}"; do
 #     nohup python -u supervised_data.py --filename=/data/honerkam/pfnet_data/navagent_allscenes/${scene}.tfrecord --scene_id=${scene} --agent=goalnav_agent --num_records=10000 --custom_output rgb_obs depth_obs occupancy_grid obstacle_obs --device_idx=3 --seed=90 &> nohup_datacollection${scene}.out &
 # done
-
-

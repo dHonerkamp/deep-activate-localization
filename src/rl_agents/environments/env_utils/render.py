@@ -3,6 +3,7 @@
 import numpy as np
 from matplotlib.patches import Wedge
 
+
 def draw_text(text, bgcolor, plt_ax, text_plt, alpha=1, x=0.97, y=0.97):
     """
     Render the text
@@ -16,13 +17,14 @@ def draw_text(text, bgcolor, plt_ax, text_plt, alpha=1, x=0.97, y=0.97):
     if text_plt is None:
         # render text with color
         text_plt = plt_ax.text(x, y, text, backgroundcolor=bgcolor,
-                        horizontalalignment='right', verticalalignment='top',
-                        transform=plt_ax.transAxes, fontsize=12, alpha=alpha)
+                               horizontalalignment='right', verticalalignment='top',
+                               transform=plt_ax.transAxes, fontsize=12, alpha=alpha)
     else:
         # update existing text
         text_plt.set_text(text)
 
     return text_plt
+
 
 def draw_floor_map(floor_map, map_shape, plt_ax, map_plt, cmap='gray'):
     """
@@ -42,7 +44,8 @@ def draw_floor_map(floor_map, map_shape, plt_ax, map_plt, cmap='gray'):
     return map_plt
 
 
-def draw_robot_pose(robot_pose, color, map_shape, plt_ax, position_plt, heading_plt, plt_path=False, scale=1, alpha=0.7):
+def draw_robot_pose(robot_pose, color, map_shape, plt_ax, position_plt, heading_plt, plt_path=False, scale=1,
+                    alpha=0.7):
     """
     Render the robot pose on the scene floor map
     :param ndarray robot_pose: ndarray representing robot position (x, y) and heading (theta)
@@ -75,6 +78,7 @@ def draw_robot_pose(robot_pose, color, map_shape, plt_ax, position_plt, heading_
         position_plt.update({'center': [x, y]})
         heading_plt.update({'xdata': xdata, 'ydata': ydata})
     if plt_path is True:
-        plt_ax.arrow(xdata[0], ydata[0], (xdata[1]-xdata[0]), (ydata[1]-ydata[0]), head_width=0.5, head_length=0.7, fc='brown', ec='brown')
+        plt_ax.arrow(xdata[0], ydata[0], (xdata[1] - xdata[0]), (ydata[1] - ydata[0]), head_width=0.5, head_length=0.7,
+                     fc='brown', ec='brown')
 
     return position_plt, heading_plt

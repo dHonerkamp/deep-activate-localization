@@ -16,12 +16,12 @@ from pprint import pprint
 import copy
 
 from environments.env_utils import datautils
-from pfnetwork.train import train_step, eval_step, WANDB_PROJECT, stack_loss_dicts, calc_metrics, vis_output, init_pfnet_model
+from pfnetwork.train import train_step, eval_step, WANDB_PROJECT, stack_loss_dicts, calc_metrics, vis_output, \
+    init_pfnet_model
 from pfnetwork.arguments import parse_common_args, particle_std_to_covariance
 from custom_agents.stable_baselines_utils import DotDict
 
 np.set_printoptions(suppress=True)
-
 
 
 def pfnet_train(params):
@@ -48,9 +48,10 @@ def pfnet_train(params):
         print(params.tfrecordpath)
         train_filenames = list(glob.glob(os.path.join(params.tfrecordpath, TRAIN_SUBDIR, '*.tfrecord')))
         eval_filenames = list(glob.glob(os.path.join(params.tfrecordpath, TEST_SUBDIR, '*.tfrecord')))
-    train_ds = datautils.get_dataflow(train_filenames, params.batch_size, s_buffer_size=params.s_buffer_size, is_training=True, is_igibson=True)
+    train_ds = datautils.get_dataflow(train_filenames, params.batch_size, s_buffer_size=params.s_buffer_size,
+                                      is_training=True, is_igibson=True)
     print(f'train data: {len(train_filenames)} files\n{train_filenames}')
-    
+
     # # TODO: REMOVE
     # failed = []
     # for file in sorted(train_filenames):
@@ -58,14 +59,13 @@ def pfnet_train(params):
     #     train_itr = train_ds.as_numpy_iterator()
     #     for i, data in enumerate(train_itr):
     #         print(file, i, data['depth_observation'].shape)
-            
+
     # evaluation data
-    eval_ds = datautils.get_dataflow(eval_filenames, params.batch_size, s_buffer_size=params.s_buffer_size, is_training=True, is_igibson=True)
+    eval_ds = datautils.get_dataflow(eval_filenames, params.batch_size, s_buffer_size=params.s_buffer_size,
+                                     is_training=True, is_igibson=True)
     print(f'eval data: {len(eval_filenames)} files\n{eval_filenames}')
 
-
     # create igibson env which is used "only" to sample particles
-
 
     if params.epochs:
         # env = create_env(params, pfnet_model=pfnet_model)
@@ -86,7 +86,9 @@ def pfnet_train(params):
             raw_train_record = next(train_itr)
             processed_data = datautils.transform_raw_record(raw_train_record, params)
 
-            train_loss_dict, train_output, train_state = train_step(data=processed_data, model=pfnet_model, optimizer=optimizer, train_loss=train_loss, map_pixel_in_meters=params.map_pixel_in_meters)
+            train_loss_dict, train_output, train_state = train_step(data=processed_data, model=pfnet_model,
+                                                                    optimizer=optimizer, train_loss=train_loss,
+                                                                    map_pixel_in_meters=params.map_pixel_in_meters)
             train_loss_dicts.append(train_loss_dict)
 
         if train_loss_dicts:
@@ -95,7 +97,6 @@ def pfnet_train(params):
         else:
             train_metrics = {}
 
-
         eval_itr = eval_ds.as_numpy_iterator()
         eval_loss_dicts = []
         if len(eval_filenames):
@@ -103,7 +104,9 @@ def pfnet_train(params):
                 raw_eval_record = next(eval_itr)
                 processed_data = datautils.transform_raw_record(raw_eval_record, params)
 
-                eval_loss_dict, eval_output, eval_state = eval_step(data=processed_data, model=pfnet_model, eval_loss=eval_loss, map_pixel_in_meters=params.map_pixel_in_meters)
+                eval_loss_dict, eval_output, eval_state = eval_step(data=processed_data, model=pfnet_model,
+                                                                    eval_loss=eval_loss,
+                                                                    map_pixel_in_meters=params.map_pixel_in_meters)
                 eval_loss_dicts.append(eval_loss_dict)
 
         if eval_loss_dicts:
@@ -135,17 +138,19 @@ def pfnet_train(params):
     # eval_ds = datautils.get_dataflow(eval_filenames, params.batch_size, params.s_buffer_size, is_training=True, is_igibson=True)
     # recreate ds with correct batch size
     params.batch_size = 1
-    train_ds = datautils.get_dataflow(train_filenames, params.batch_size, s_buffer_size=params.s_buffer_size, is_training=True, is_igibson=True)
-    eval_ds = datautils.get_dataflow(eval_filenames, params.batch_size, s_buffer_size=params.s_buffer_size, is_training=True, is_igibson=True)
+    train_ds = datautils.get_dataflow(train_filenames, params.batch_size, s_buffer_size=params.s_buffer_size,
+                                      is_training=True, is_igibson=True)
+    eval_ds = datautils.get_dataflow(eval_filenames, params.batch_size, s_buffer_size=params.s_buffer_size,
+                                     is_training=True, is_igibson=True)
     assert len(train_filenames), (train_filenames, os.path.join(params.tfrecordpath, TRAIN_SUBDIR, '*.tfrecord'))
     assert len(eval_filenames), (eval_filenames, os.path.join(params.tfrecordpath, TEST_SUBDIR, '*.tfrecord'))
 
     for distribution, rng, std_deviation, num_particles, resample in [('gaussian', 10, 0.3, 300, True),
                                                                       ('uniform', 10, 0.3, 500, True),
-                                                                      ('uniform', 1000, 0.3, 3000, True),]:
-    # for distribution in ['uniform', 'gaussian']:
-    #     for std_deviation in [0.15, 0.3, 0.5]:
-    #         for num_particles in [30, 500]:
+                                                                      ('uniform', 1000, 0.3, 3000, True), ]:
+        # for distribution in ['uniform', 'gaussian']:
+        #     for std_deviation in [0.15, 0.3, 0.5]:
+        #         for num_particles in [30, 500]:
         if env is not None:
             env.close()
             del env
@@ -157,19 +162,20 @@ def pfnet_train(params):
 
         params.init_particles_distr = distribution
         params.init_particles_std[0] = std_deviation
-        params.init_particles_cov = particle_std_to_covariance(params.init_particles_std, map_pixel_in_meters=params.map_pixel_in_meters)
+        params.init_particles_cov = particle_std_to_covariance(params.init_particles_std,
+                                                               map_pixel_in_meters=params.map_pixel_in_meters)
         params.num_particles = num_particles
         params.resample = resample
         params.particles_range = rng
 
         pfnet_model = init_pfnet_model(params, is_igibson=True)
         env = None
-        
+
         def _get_test_name(suffix):
             return f"test_{agent}_{distribution}{rng if (distribution == 'uniform') else ''}_std{std_deviation}_p{num_particles}{'_resample' if params.resample else ''}{suffix}"
 
         for suffix, ds in [('_seen', train_ds), ('', eval_ds)]:
-            for agent in ['']:  #, 'goalnav_agent', 'avoid_agent']:
+            for agent in ['']:  # , 'goalnav_agent', 'avoid_agent']:
                 params.agent = agent
                 test_name = _get_test_name(suffix)
                 test_loss_dicts = []
@@ -190,7 +196,7 @@ def pfnet_train(params):
                 #     if env is None:
                 #         # TODO: set scene ids to test envs
                 #         env = create_env(params, pfnet_model=pfnet_model)
-            
+
                 #     for _ in tqdm(range(min(params.num_test_batches, 100)), desc=test_name):
                 #         obs = env.reset()
                 #         for _ in range(params.trajlen - 1):
@@ -212,38 +218,36 @@ def pfnet_train(params):
         env.close()
 
 
-
 if __name__ == '__main__':
     # parsed_params = parse_args()
     params = parse_common_args('igibson')
     params.use_tf_function = False
-    
-    common_args = dict(project=WANDB_PROJECT, 
-                    sync_tensorboard=True)
+
+    common_args = dict(project=WANDB_PROJECT,
+                       sync_tensorboard=True)
     if params.resume_id:
         run = wandb.init(**common_args, id=params.resume_id, resume='must')
-        
+
         wandb_params = DotDict(copy.deepcopy(dict(wandb.config)))
-        
+
         # backwards compatibility for new keys
         for p in ['reward', 'collision_reward_weight', 'observe_steps']:
             if not wandb_params.get(p, None):
                 wandb_params[p] = params.__getattribute__(p)
-                
+
         # always override certain values
         wandb_params['epochs'] = 0
         wandb_params['eval_only'] = True
         wandb_params['batch_size'] = 1
         for p in ['num_eval_samples', 'device_idx', "seed", 'pfnet_loadpath', 'resample', 'alpha_resample_ratio']:
             wandb_params[p] = params.__getattribute__(p)
-        
+
         params = wandb_params
     else:
         run_name = Path(params.root_dir).name
         run = wandb.init(**common_args, config=params, name=run_name, mode='disabled' if params.debug else 'online')
 
     pfnet_train(params)
-
 
 # nohup python -u train_pfnet.py --root_dir=./run2 --tfrecordpath=/data/honerkam/pfnet_data/ --epochs=100 --obs_mode=rgb-depth --num_train_samples=4000 --num_eval_samples=500 --batch_size=12 --s_buffer_size=500 --pfnet_loadpath='' --learning_rate=5e-5 --init_particles_distr=gaussian --init_particles_std '0.15' '0.523599' --particles_range=100 --num_particles=30 --transition_std '0.' '0.' --resample=false --alpha_resample_ratio=0.5 --global_map_size 100 100 1 --window_scaler=1.0 --device_idx=2 --multiple_gpus=false --seed=42 > nohup.out &
 # python -u train_pfnet.py --root_dir=./run_occupancy --tfrecordpath=/data2/honerkam/pfnet_data/ --epochs=100 --obs_mode=occupancy_grid --num_train_samples=4000 --num_eval_samples=500 --batch_size=12 --pfnet_loadpath='' --learning_rate=5e-5 --init_particles_distr=gaussian --init_particles_std '0.15' '0.523599' --particles_range=100 --num_particles=30 --transition_std '0.' '0.' --resample=false --alpha_resample_ratio=0.5 --global_map_size 100 100 1 --window_scaler=1.0 --device_idx=7 --multiple_gpus=false --seed=42 

@@ -9,7 +9,6 @@ from PIL import Image
 
 from igibson.utils.assets_utils import get_scene_path
 
-
 ORIG_IGIBSON_MAP_RESOLUTION = 0.01
 
 
@@ -24,7 +23,7 @@ def get_floor_map(scene_id, floor_num, trav_map_resolution, trav_map_erosion, pa
     # NOTE: these values might be hardcoded in a place, so if changing the task config, also change the hardcoded values!
     assert trav_map_resolution == 0.1, trav_map_resolution
     assert trav_map_erosion == 2, trav_map_erosion
-    
+
     obstacle_map = np.array(Image.open(
         os.path.join(get_scene_path(scene_id), f'floor_{floor_num}.png'))
     )
@@ -32,7 +31,6 @@ def get_floor_map(scene_id, floor_num, trav_map_resolution, trav_map_erosion, pa
     trav_map = np.array(Image.open(
         os.path.join(get_scene_path(scene_id), f'floor_trav_{floor_num}.png'))
     )
-
 
     # 0: free / unexplored / outside map, 1: obstacle
     # NOTE: shouldn't mather that outside the map is not unexplored, because this will always be unexplored in the lidar scan and so will always be masked out
@@ -42,12 +40,11 @@ def get_floor_map(scene_id, floor_num, trav_map_resolution, trav_map_erosion, pa
 
     height, width = trav_map.shape
     resize = (int(width * ORIG_IGIBSON_MAP_RESOLUTION / trav_map_resolution),
-                int(height * ORIG_IGIBSON_MAP_RESOLUTION / trav_map_resolution))
+              int(height * ORIG_IGIBSON_MAP_RESOLUTION / trav_map_resolution))
     occupancy_map_small = cv2.resize(occupancy_map.astype(float), resize, interpolation=cv2.INTER_AREA)
     occupancy_map_small = occupancy_map_small[:, :, np.newaxis]
     # plt.imshow(occupancy_map_small > 0.1);
     # plt.show()
-
 
     trav_map[obstacle_map == 0] = 0
 
@@ -70,7 +67,7 @@ def get_floor_map(scene_id, floor_num, trav_map_resolution, trav_map_erosion, pa
     return occupancy_map_small, occupancy_map_small.shape, trav_map
 
 
-def get_random_points_map(npoints, trav_map, true_mask = None):
+def get_random_points_map(npoints, trav_map, true_mask=None):
     """
     Sample a random point on the given floor number. If not given, sample a random floor number.
 
@@ -124,9 +121,9 @@ def get_random_particles(num_particles, particles_distr, robot_pose, trav_map, p
             # NOTE: cv2 expects [x, y] order like matplotlib
             mask = np.zeros_like(trav_map)
             cv2.rectangle(mask,
-                            (int(center[1] - particles_range), int(center[0] - particles_range)),
-                            (int(center[1] + particles_range), int(center[0] + particles_range)),
-                            1, -1)
+                          (int(center[1] - particles_range), int(center[0] - particles_range)),
+                          (int(center[1] + particles_range), int(center[0] + particles_range)),
+                          1, -1)
             b_particles = get_random_points_map(npoints=num_particles, trav_map=trav_map, true_mask=mask)
 
             particles.append(b_particles)
@@ -213,7 +210,7 @@ def obstacle_avoidance(state, max_lin_vel, max_ang_vel):
     Choose action by avoiding obstances which highest preference to move forward
     """
     assert list(state.shape) == [4]
-    left, left_front, right_front, right = state # obstacle (not)present area
+    left, left_front, right_front, right = state  # obstacle (not)present area
 
     if not left_front and not right_front:
         # move forward
@@ -232,7 +229,8 @@ def obstacle_avoidance(state, max_lin_vel, max_ang_vel):
 
 
 def goal_nav_agent(env, current_pose_pixel, max_lin_vel, max_ang_vel):
-    path, dist = env.scene.get_shortest_path(env.task.floor_num, env.map_to_world(current_pose_pixel[:2]), env.task.target_pos[:2], entire_path=True)
+    path, dist = env.scene.get_shortest_path(env.task.floor_num, env.map_to_world(current_pose_pixel[:2]),
+                                             env.task.target_pos[:2], entire_path=True)
     # rel_path = []
     # for p in path:
     #     rel_path.append(env.task.global_to_local(env, [p[0], p[1], 0]))
@@ -253,7 +251,8 @@ def select_action(agent: str, obs, params, env, old_pose):
     elif agent == 'avoid_agent':
         action = obstacle_avoidance(obs['obstacle_obs'], env.config["linear_velocity"], env.config["angular_velocity"])
     elif agent == 'goalnav_agent':
-        action = goal_nav_agent(env=env, current_pose_pixel=old_pose, max_lin_vel=env.config["linear_velocity"], max_ang_vel=env.config["angular_velocity"])
+        action = goal_nav_agent(env=env, current_pose_pixel=old_pose, max_lin_vel=env.config["linear_velocity"],
+                                max_ang_vel=env.config["angular_velocity"])
     elif agent == "turn_agent":
         action = np.array([0., env.config["angular_velocity"]])
     else:
@@ -319,7 +318,8 @@ def gather_episode_stats(env, params, sample_particles=False):
             else:
                 x, y = pose[..., 0], pose[..., 1]
             s[int(np.rint(x)), int(np.rint(y))] = 2
-        plt.imshow(s); plt.show()
+        plt.imshow(s);
+        plt.show()
 
     odom = calc_odometry(old_pose, old_pose)
     assert list(odom.shape) == [3]
@@ -351,10 +351,9 @@ def gather_episode_stats(env, params, sample_particles=False):
     if sample_particles:
         raise NotImplementedError()
 
-
     episode_data = {
-        'scene_id': scene_id, # str
-        'floor_num': floor_num, # int
+        'scene_id': scene_id,  # str
+        'floor_num': floor_num,  # int
         'floor_map': floor_map,  # (height, width, 1)
         'trav_map': trav_map,  # (height, width, 1)
         'odometry': np.stack(odometry),  # (trajlen, 3)
@@ -422,7 +421,6 @@ def deserialize_tf_record(raw_record):
 
     features_tensor = tf.io.parse_single_example(raw_record, tfrecord_format)
     return features_tensor
-
 
 
 def deserialize_tf_record_igibson(raw_record):
@@ -513,34 +511,42 @@ def transform_raw_record(parsed_record, params):
 
     # perform required rescale to [-1, 1]
     if obs_mode == 'rgb-depth':
-        rgb_observation = parsed_record['rgb_observation'].reshape([batch_size] + list(parsed_record['rgb_observation_shape'][0]))[:, :trajlen]
+        rgb_observation = parsed_record['rgb_observation'].reshape(
+            [batch_size] + list(parsed_record['rgb_observation_shape'][0]))[:, :trajlen]
         assert np.min(rgb_observation) >= 0. and np.max(rgb_observation) <= 1.
-        depth_observation = parsed_record['depth_observation'].reshape([batch_size] + list(parsed_record['depth_observation_shape'][0]))[:, :trajlen]
+        depth_observation = parsed_record['depth_observation'].reshape(
+            [batch_size] + list(parsed_record['depth_observation_shape'][0]))[:, :trajlen]
         assert np.min(depth_observation) >= 0. and np.max(depth_observation) <= 1.
-        trans_record['observation'] = np.concatenate([rgb_observation, depth_observation,], axis=-1)
+        trans_record['observation'] = np.concatenate([rgb_observation, depth_observation, ], axis=-1)
     elif obs_mode == 'depth':
-        depth_observation = parsed_record['depth_observation'].reshape([batch_size] + list(parsed_record['depth_observation_shape'][0]))[:, :trajlen]
+        depth_observation = parsed_record['depth_observation'].reshape(
+            [batch_size] + list(parsed_record['depth_observation_shape'][0]))[:, :trajlen]
         assert np.min(depth_observation) >= 0. and np.max(depth_observation) <= 1.
         trans_record['observation'] = depth_observation
     elif obs_mode == 'rgb':
-        rgb_observation = parsed_record['rgb_observation'].reshape([batch_size] + list(parsed_record['rgb_observation_shape'][0]))[:, :trajlen]
+        rgb_observation = parsed_record['rgb_observation'].reshape(
+            [batch_size] + list(parsed_record['rgb_observation_shape'][0]))[:, :trajlen]
         assert np.min(rgb_observation) >= 0. and np.max(rgb_observation) <= 1.
         trans_record['observation'] = rgb_observation
     elif obs_mode == 'occupancy_grid':
-        occupancy_grid_observation = parsed_record['occupancy_grid'].reshape([batch_size] + list(parsed_record['occupancy_grid_shape'][0]))[:, :trajlen]
+        occupancy_grid_observation = parsed_record['occupancy_grid'].reshape(
+            [batch_size] + list(parsed_record['occupancy_grid_shape'][0]))[:, :trajlen]
         assert np.min(occupancy_grid_observation) >= 0. and np.max(occupancy_grid_observation) <= 1.
         if params.likelihood_model == 'learned':
             resized = []
             for batch in range(occupancy_grid_observation.shape[0]):
                 for img in range(occupancy_grid_observation.shape[1]):
                     resized.append(cv2.resize(occupancy_grid_observation[batch, img], (56, 56)))
-            occupancy_grid_observation = np.reshape(np.stack(resized, 0), (occupancy_grid_observation.shape[0], occupancy_grid_observation.shape[1], 56, 56, 1))
+            occupancy_grid_observation = np.reshape(np.stack(resized, 0), (
+            occupancy_grid_observation.shape[0], occupancy_grid_observation.shape[1], 56, 56, 1))
         trans_record['observation'] = occupancy_grid_observation.astype(float)  # [0, 0.5, 1]
     else:
         raise ValueError(obs_mode)
 
-    trans_record['odometry'] = parsed_record['odometry'].reshape([batch_size] + list(parsed_record['odometry_shape'][0]))[:, :trajlen]
-    trans_record['true_states'] = parsed_record['state'].reshape([batch_size] + list(parsed_record['state_shape'][0]))[:, :trajlen]
+    trans_record['odometry'] = parsed_record['odometry'].reshape(
+        [batch_size] + list(parsed_record['odometry_shape'][0]))[:, :trajlen]
+    trans_record['true_states'] = parsed_record['state'].reshape([batch_size] + list(parsed_record['state_shape'][0]))[
+                                  :, :trajlen]
 
     # HACK: get floor and obstance map from environment instance for the scene
     trans_record['org_map_shape'] = []
@@ -559,20 +565,20 @@ def transform_raw_record(parsed_record, params):
         # HACK: right zero-pad floor/obstacle map
         # obstacle_map, _ = env.get_obstacle_map(scene_id, floor_num, pad_map_size)
         # floor_map, org_map_shape, trav_map = env.get_floor_map(scene_id, floor_num, pad_map_size)
-        floor_map, org_map_shape, trav_map = get_floor_map(scene_id=scene_id, 
+        floor_map, org_map_shape, trav_map = get_floor_map(scene_id=scene_id,
                                                            floor_num=floor_num,
                                                            pad_map_size=pad_map_size,
-                                                           trav_map_erosion=2, 
+                                                           trav_map_erosion=2,
                                                            trav_map_resolution=0.1)
 
         # sample random particles using gt_pose at start of trajectory
         gt_first_pose = np.expand_dims(trans_record['true_states'][b_idx, 0, :], axis=0)
         init_particles = get_random_particles(num_particles=num_particles,
-                                                     particles_distr=params.init_particles_distr,
-                                                     robot_pose=gt_first_pose,
-                                                     trav_map=trav_map,
-                                                     particles_cov=particles_cov,
-                                                     particles_range=params.particles_range)
+                                              particles_distr=params.init_particles_distr,
+                                              robot_pose=gt_first_pose,
+                                              trav_map=trav_map,
+                                              particles_cov=particles_cov,
+                                              particles_range=params.particles_range)
 
         trans_record['org_map_shape'].append(org_map_shape)
         trans_record['init_particles'].append(init_particles)
@@ -581,13 +587,16 @@ def transform_raw_record(parsed_record, params):
     trans_record['org_map_shape'] = np.stack(trans_record['org_map_shape'], axis=0)  # [batch_size, 3]
     trans_record['trav_map'] = np.stack(trans_record['trav_map'], axis=0)  # [batch_size, H, W, C]
     trans_record['global_map'] = np.stack(trans_record['global_map'], axis=0)  # [batch_size, H, W, C]
-    trans_record['init_particles'] = np.concatenate(trans_record['init_particles'], axis=0)   # [batch_size, N, 3]
+    trans_record['init_particles'] = np.concatenate(trans_record['init_particles'], axis=0)  # [batch_size, N, 3]
 
     # sanity check
     assert list(trans_record['odometry'].shape) == [batch_size, trajlen, 3], f'{trans_record["odometry"].shape}'
     assert list(trans_record['true_states'].shape) == [batch_size, trajlen, 3], f'{trans_record["true_states"].shape}'
-    assert list(trans_record['observation'].shape) in [[batch_size, trajlen, 56, 56, params.obs_ch], [batch_size, trajlen, 128, 128, params.obs_ch]], f'{trans_record["observation"].shape}'
-    assert list(trans_record['init_particles'].shape) == [batch_size, num_particles, 3], f'{trans_record["init_particles"].shape}'
+    assert list(trans_record['observation'].shape) in [[batch_size, trajlen, 56, 56, params.obs_ch],
+                                                       [batch_size, trajlen, 128, 128,
+                                                        params.obs_ch]], f'{trans_record["observation"].shape}'
+    assert list(trans_record['init_particles'].shape) == [batch_size, num_particles,
+                                                          3], f'{trans_record["init_particles"].shape}'
     assert list(trans_record['global_map'].shape) == [batch_size, *pad_map_size], f'{trans_record["global_map"].shape}'
     assert list(trans_record['trav_map'].shape) == [batch_size, *pad_map_size], f'{trans_record["trav_map"].shape}'
 
